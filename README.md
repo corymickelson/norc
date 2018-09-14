@@ -16,4 +16,4 @@ Build notes:
 - set required flags; cmake_cxx_flags="-fPIC"
 
 To use norc in lambda use one of the pre-built release binaries. Install into an npm based project
-with `npm i -S https://github.com/corymickelson/norc/releases/download/{version}/norc-{version}-linux-aws-x64.tar.gz norc-aws`
+with `npm i -S https://github.com/nPilots/norc/releases/download/{version}/norc-{version}-linux-aws-x64.tar.gz norc-aws`
