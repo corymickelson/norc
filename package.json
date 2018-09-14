@@ -1,0 +1,31 @@
+{
+  "name": "norc",
+  "version": "0.0.1",
+  "description": "Nodejs ORC file reader/writer",
+  "main": "index.js",
+  "scripts": {
+    "test": "test"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/corymickelson/norc.git"
+  },
+  "keywords": [
+    "apache",
+    "orc",
+    "node-addon-api"
+  ],
+  "author": "Cory Mickelson",
+  "license": "AGPL-3.0-or-later",
+  "bugs": {
+    "url": "https://github.com/corymickelson/norc/issues"
+  },
+  "homepage": "https://github.com/corymickelson/norc#readme",
+  "dependencies": {
+    "cmake-js": "^3.7.3",
+    "node-addon-api": "^1.4.0"
+  },
+  "devDependencies": {
+    "@types/node": "^10.9.4"
+  }
+}

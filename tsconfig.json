@@ -1,0 +1,22 @@
+{
+  "compilerOptions": {
+    "declaration": true,
+    "preserveConstEnums": true,
+    "lib": [
+      "esnext","es7"
+    ],
+    "module": "commonjs",
+    "sourceMap": true,
+    "rootDir": "./spec",
+    "strict": true,
+    "removeComments": false,
+    "target": "es6",
+    "types": [
+      "node"
+    ],
+    "typeRoots": [
+      "node_modules/@types"
+    ]
+  },
+  "include": []
+}
