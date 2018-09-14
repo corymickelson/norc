@@ -7,5 +7,4 @@ export namespace norc {
         importCSV(file:string, cb:(err:Error, norc:Writer) => void): void
         close(): void
     }
-    export class Reader {}
 }
