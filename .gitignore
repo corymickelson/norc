@@ -3,12 +3,6 @@
 cmake-build-debug
 node_modules
 build
-
-aws/zlib
-aws/src
-aws/include
-aws/*.a
-aws/protoc
-aws/*.h
-
+releases
 test.js
+

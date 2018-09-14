@@ -1,1 +1,2 @@
-exports.norc = require('bindings')('norc')
+const addon = require('bindings')('norc')
+exports.norc = addon

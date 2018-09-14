@@ -1,6 +1,6 @@
 {
   "name": "@npilots/norc",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "Nodejs ORC file reader/writer",
   "main": "index.js",
   "types": "index.d.ts",
@@ -23,11 +23,11 @@
   },
   "homepage": "https://github.com/corymickelson/norc#readme",
   "dependencies": {
-    "bindings": "^1.3.0",
-    "node-addon-api": "^1.4.0"
+    "bindings": "^1.3.0"
   },
   "devDependencies": {
     "@types/node": "^10.9.4",
-    "cmake-js": "^3.7.3"
+    "cmake-js": "^3.7.3",
+    "node-addon-api": "^1.4.0"
   }
 }
