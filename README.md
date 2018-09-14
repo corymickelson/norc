@@ -17,3 +17,23 @@ Build notes:
 
 To use norc in lambda use one of the pre-built release binaries. Install into an npm based project
 with `npm i -S https://github.com/nPilots/norc/releases/download/{version}/norc-{version}-linux-aws-x64.tar.gz norc-aws`
+
+
+### Usage
+
+Convert a csv file to an orc file.
+```typescript
+import {norc} from '@npilots/norc'
+function convert(csv:string, output:string, schema:string): void {
+    const writer = new norc.Writer(output)
+    writer.stringTypeSchema(schema)
+    writer.importCSV(csv, (err, data) => {
+        if(err) {
+            // handle error
+        } else {
+            // close the writer to complete the file
+            writer.close()
+        }
+    })
+}
+```
