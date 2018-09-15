@@ -4,5 +4,4 @@ cmake-build-debug
 node_modules
 build
 releases
-test.js
 
