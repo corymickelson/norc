@@ -5,15 +5,22 @@
 
 #include "Writer.h"
 #include <algorithm>
-#include <utility>
 #include <fstream>
 #include <iostream>
+#include <sstream>
+#include <utility>
 
 using namespace Napi;
 using namespace orc;
+using std::cout;
+using std::endl;
+using std::find;
 using std::ifstream;
 using std::string;
+using std::stringstream;
 using std::vector;
+using std::map;
+using std::pair;
 
 namespace norc {
 FunctionReference Writer::constructor; // NOLINT
@@ -27,6 +34,7 @@ Writer::Initialize(Napi::Env& env, Napi::Object& target)
     "Writer",
     { InstanceMethod("stringTypeSchema", &norc::Writer::StringTypeSchema),
       InstanceMethod("close", &norc::Writer::Close),
+      InstanceMethod("schema", &norc::Writer::Schema),
       InstanceMethod("importCSV", &norc::Writer::ImportCSV) });
   constructor = Napi::Persistent(ctor);
   constructor.SuppressDestruct();
@@ -41,7 +49,6 @@ Writer::Writer(const CallbackInfo& info)
       .ThrowAsJavaScriptException();
   }
   output = writeLocalFile(info[0].As<String>());
-//  options = new WriterOptions();
   options.setStripeSize((128 << 20));
   options.setCompressionBlockSize((64 << 10));
   options.setCompression(CompressionKind_ZLIB);
@@ -58,6 +65,54 @@ Writer::StringTypeSchema(const CallbackInfo& info)
   writer = createWriter(*type, output.get(), options);
 }
 
+Napi::Value
+Writer::Schema(const CallbackInfo& info)
+{
+  if (info.Length() < 1 || !info[0].IsObject()) {
+    TypeError::New(info.Env(), "The schema as an Object format is required")
+      .ThrowAsJavaScriptException();
+  }
+  vector<string> types = { "boolean", "byte",      "short",   "int",
+                           "long",    "float",     "double",  "string",
+                           "binary",  "timestamp", "list",    "map",
+                           "struct",  "union",     "decimal", "date",
+                           "varchar", "char" };
+  stringstream typeStr;
+  typeStr << "struct<";
+  auto schema = info[0].As<Object>();
+  auto keys = schema.GetPropertyNames();
+  for (uint32_t i = 0; i < keys.Length(); i++) {
+    string k = keys.Get(i).As<String>();
+    TypeKind v = static_cast<TypeKind>(schema.Get(k).As<Number>().Int32Value());
+    schemaMap.insert(pair<string, TypeKind>(k, v));
+    if (find(types.begin(), types.end(), types[v]) == types.end()) {
+      Error::New(info.Env(), "Invalid type: " + types[v] + " for key: " + k)
+        .ThrowAsJavaScriptException();
+      break;
+    }
+    typeStr << k << ":" << v;
+    if (i < keys.Length())
+      typeStr << ",";
+  }
+  typeStr << ">";
+
+  cout << "Setting File Schema as: " << typeStr.str() << endl;
+
+  type = Type::buildTypeFromString(typeStr.str());
+  writer = createWriter(*type, output.get(), options);
+  batch = writer->createRowBatch(batchSize);
+}
+
+void
+Writer::Add(const CallbackInfo&)
+{}
+
+void
+Writer::Close(const CallbackInfo&)
+{
+  writer->close();
+}
+
 class ImportCSVWorker : public AsyncWorker
 {
 public:
@@ -71,14 +126,14 @@ private:
   Writer& writer;
   string csv;
 
-  string columnString(string v, uint64_t idx)
+  string columnString(const string& v, uint64_t idx)
   {
     uint64_t col = 0;
     size_t start = 0;
-    size_t end = v.find(",");
+    size_t end = v.find(',');
     while (col < idx && end != string::npos) {
       start = end + 1;
-      end = v.find(",", start);
+      end = v.find(',', start);
       ++col;
     }
     return col == idx ? v.substr(start, end - start) : "";
@@ -234,8 +289,7 @@ private:
                         uint64_t numValues,
                         uint64_t colIndex)
   {
-    orc::LongVectorBatch* longBatch =
-      dynamic_cast<orc::LongVectorBatch*>(batch);
+    auto* longBatch = dynamic_cast<orc::LongVectorBatch*>(batch);
     bool hasNull = false;
     for (uint64_t i = 0; i < numValues; ++i) {
       std::string col = columnString(data[i], colIndex);
@@ -244,13 +298,14 @@ private:
         hasNull = true;
       } else {
         batch->notNull[i] = 1;
-        struct tm tm;
+        struct tm tm
+        {};
         memset(&tm, 0, sizeof(struct tm));
         strptime(col.c_str(), "%Y-%m-%d", &tm);
         time_t t = mktime(&tm);
         time_t t1970 = 0;
         double seconds = difftime(t, t1970);
-        int64_t days = static_cast<int64_t>(seconds / (60 * 60 * 24));
+        auto days = static_cast<int64_t>(seconds / (60 * 60 * 24));
         longBatch->data[i] = days;
       }
     }
@@ -262,9 +317,9 @@ private:
                              uint64_t numValues,
                              uint64_t colIndex)
   {
-    struct tm timeStruct;
-    orc::TimestampVectorBatch* tsBatch =
-      dynamic_cast<orc::TimestampVectorBatch*>(batch);
+    struct tm timeStruct
+    {};
+    auto* tsBatch = dynamic_cast<orc::TimestampVectorBatch*>(batch);
     bool hasNull = false;
     for (uint64_t i = 0; i < numValues; ++i) {
       std::string col = columnString(data[i], colIndex);
@@ -396,10 +451,5 @@ Writer::ImportCSV(const CallbackInfo& info)
   auto cb = info[1].As<Function>();
   auto worker = new ImportCSVWorker(cb, *this, info[0].As<String>());
   worker->Queue();
-}
-void
-Writer::Close(const CallbackInfo&)
-{
-  writer->close();
 }
 }
