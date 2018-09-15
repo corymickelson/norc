@@ -113,8 +113,8 @@ Writer::Add(const CallbackInfo& info)
     string col = info[0].As<String>();
     auto values = info[1].As<Array>();
     if (rows == 0) {
-      rows = values.Length() -1;
-    } else if (rows != values.Length() -1) {
+      rows = values.Length();
+    } else if (rows != values.Length()) {
       Error::New(
         info.Env(),
         "Row count has already been defined by a previous call to Add. "
@@ -209,13 +209,15 @@ Writer::AddLongColumn(const Array& data, int structIndex)
         hasNull = true;
       } else {
         longBatch->notNull[j] = 1;
-        longBatch->data[j] = data[arrayIdx].As<Number>().Int64Value();
+        int64_t v =  data[arrayIdx].As<Number>();
+        longBatch->data[j] = v;
       }
       batchItemCount++;
       arrayIdx++;
     }
     longBatch->hasNulls = hasNull;
     longBatch->numElements = batchItemCount;
+    row->numElements = batchItemCount;
     writer->add(*batch);
   }
 }
@@ -254,6 +256,7 @@ Writer::AddStringColumn(const Array& data, int structIndex)
     }
     stringBatch->hasNulls = hasNull;
     stringBatch->numElements = batchItemCount;
+    row->numElements = batchItemCount;
     writer->add(*batch);
   }
 }
@@ -283,7 +286,7 @@ Writer::AddDoubleColumn(const Array& data, int structIndex)
     }
     dblBatch->hasNulls = hasNull;
     dblBatch->numElements = batchItemCount;
-
+    row->numElements = batchItemCount;
     writer->add(*batch);
   }
 }
@@ -336,6 +339,7 @@ Writer::AddDecimalColumn(const Array& data,
     }
     batch->hasNulls = hasNull;
     batch->numElements = batchItemCount;
+    row->numElements = batchItemCount;
     writer->add(*batch);
   }
 }
@@ -367,6 +371,7 @@ Writer::AddBoolColumn(const Array& data, int structIndex)
     }
     boolBatch->hasNulls = hasNull;
     boolBatch->numElements = batchItemCount;
+    row->numElements = batchItemCount;
     writer->add(*batch);
   }
 }
@@ -407,6 +412,7 @@ Writer::AddDateColumn(const Array& data, int structIndex)
     }
     timeBatch->hasNulls = hasNull;
     timeBatch->numElements = batchItemCount;
+    row->numElements = batchItemCount;
     writer->add(*batch);
   }
 }
@@ -453,6 +459,7 @@ Writer::AddTimestampColumn(const Array& data, int structIndex)
     }
     tsBatch->hasNulls = hasNull;
     tsBatch->numElements = batchItemCount;
+    row->numElements = batchItemCount;
     writer->add(*batch);
   }
 }
