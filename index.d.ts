@@ -25,7 +25,7 @@ export namespace norc {
     export class Writer {
         constructor(output: string)
         stringTypeSchema(schema: string): void
-        importCSV(file: string, cb: (err: Error, norc: Writer) => void): void
+        // importCSV(file: string, cb: (err: Error, norc: Writer) => void): void
         schema(v: {[key:string]: DataType}): void
         add(column: string, values: Array<string|boolean|number>): void
         close(): void

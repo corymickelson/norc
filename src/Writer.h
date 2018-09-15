@@ -11,6 +11,8 @@
 
 using Napi::CallbackInfo;
 using std::unique_ptr;
+using std::vector;
+using std::string;
 
 namespace norc {
 
@@ -22,10 +24,10 @@ public:
   explicit Writer(const CallbackInfo&);
   void Close(const CallbackInfo&);
   void StringTypeSchema(const CallbackInfo&);
-  void ImportCSV(const CallbackInfo&);
-  Napi::Value Schema(const CallbackInfo&);
+//  void ImportCSV(const CallbackInfo&);
+  void Schema(const CallbackInfo&);
   void Add(const CallbackInfo&);
-  StructVectorBatch* GetBatchRoot()
+  orc::StructVectorBatch* GetBatchRoot()
   {
     if (!batch) {
       Napi::Error::New(Env(), "Schema must be defined first")
@@ -35,14 +37,25 @@ public:
       return dynamic_cast<orc::StructVectorBatch*>(batch.get());
     }
   }
+  void AddLongColumn(const Napi::Array&, int);
+  void AddStringColumn(const Napi::Array&, int);
+  void AddDoubleColumn(const Napi::Array&, int);
+  void AddDecimalColumn(const Napi::Array&, uint64_t scale, uint64_t precision, int structIndex);
+  void AddBoolColumn(const Napi::Array&,int);
+  void AddDateColumn(const Napi::Array&,int);
+  void AddTimestampColumn(const Napi::Array&,int);
+
+
   unique_ptr<orc::OutputStream> output;
   unique_ptr<orc::Writer> writer;
   unique_ptr<orc::Type> type;
   unique_ptr<orc::ColumnVectorBatch> batch;
   orc::WriterOptions options;
-  std::map<std::string, orc::TypeKind> schemaMap;
+  unique_ptr<orc::DataBuffer<char>> buffer;
+  std::vector<std::pair<std::string, orc::TypeKind>> schema;
   uint64_t rows = 0;
-  uint64_t batchSize = 1024
+  uint64_t batchSize = 1024;
+  u_int64_t bufferOffset = 0;
 };
 }
 #endif // NORC_WRITER_H
