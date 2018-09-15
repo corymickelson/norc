@@ -14,6 +14,7 @@ Build notes:
 - disable java, libhdsfpp, tests, vendor libs, and tools
 - provide cmake variables protobuf_home,snappy_home, and lz4_home, these should all be /usr
 - set required flags; cmake_cxx_flags="-fPIC"
+- set linker flags: LDFLAGS=-Wl,-rpath=/var/task/node_modules/norc-aws/lib
 
 To use norc in lambda use one of the pre-built release binaries. Install into an npm based project
 with `npm i -S https://github.com/nPilots/norc/releases/download/{version}/norc-{version}-linux-aws-x64.tar.gz norc-aws`
