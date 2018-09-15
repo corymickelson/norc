@@ -28,6 +28,7 @@
   "devDependencies": {
     "@types/node": "^10.9.4",
     "cmake-js": "^3.7.3",
+    "fast-csv": "^2.4.1",
     "node-addon-api": "^1.4.0"
   }
 }
