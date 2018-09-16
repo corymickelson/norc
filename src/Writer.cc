@@ -653,29 +653,29 @@ protected:
           auto subType = writer.type->getSubtype(i);
           switch (subType->getKind()) {
             case BYTE:
-            case INT:
+            case TypeKind::INT:
             case SHORT:
             case LONG:
               setLongTypeValue(data, batch->fields[i], valuesRead, i);
               break;
-            case STRING:
-            case VARCHAR:
-            case CHAR:
-            case BINARY:
+            case TypeKind::STRING:
+            case TypeKind::VARCHAR:
+            case TypeKind::CHAR:
+            case TypeKind::BINARY:
               setStringTypeValue(
                 data, batch->fields[i], valuesRead, i, buffer, bufferOffset);
               break;
 
-            case FLOAT:
-            case DOUBLE:
+            case TypeKind::FLOAT:
+            case TypeKind::DOUBLE:
               setDoubleTypeValues(data, batch->fields[i], valuesRead, i);
               break;
 
-            case BOOLEAN:
+            case TypeKind::BOOLEAN:
               setBoolTypeValue(data, batch->fields[i], valuesRead, i);
               break;
 
-            case DECIMAL:
+            case TypeKind::DECIMAL:
               setDecimalTypeValue(data,
                                   batch->fields[i],
                                   valuesRead,
@@ -684,17 +684,17 @@ protected:
                                   subType->getPrecision());
               break;
 
-            case TIMESTAMP:
+            case TypeKind::TIMESTAMP:
               setTimestampTypeValue(data, batch->fields[i], valuesRead, i);
               break;
-            case DATE:
+            case TypeKind::DATE:
               setDateTypeValue(data, batch->fields[i], valuesRead, i);
               break;
 
             case LIST:
-            case MAP:
-            case STRUCT:
-            case UNION:
+            case TypeKind::MAP:
+            case TypeKind::STRUCT:
+            case TypeKind::UNION:
               SetError(subType->toString() + " is not yet supported");
               break;
           }
