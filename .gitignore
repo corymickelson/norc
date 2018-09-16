@@ -4,4 +4,6 @@ cmake-build-debug
 node_modules
 build
 releases
+test.js
+carval_details.csv
 
