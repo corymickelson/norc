@@ -15,35 +15,38 @@ using std::vector;
 using std::string;
 
 namespace norc {
-
+enum JsSchemaDataType {
+      BOOLEAN = 0,
+    TINYINT,
+    SMALLINT,
+    INT,
+    BIGINT,
+    FLOAT,
+    DOUBLE,
+    STRING,
+    BINARY,
+    TIMESTAMP,
+    ARRAY,
+    MAP,
+    STRUCT,
+    UNION,
+    DECIMAL,
+    DATE,
+    VARCHAR,
+    CHAR
+};
 class Writer : public Napi::ObjectWrap<Writer>
 {
 public:
   static Napi::FunctionReference constructor;
   static void Initialize(Napi::Env&, Napi::Object&);
   explicit Writer(const CallbackInfo&);
+  ~Writer();
   void Close(const CallbackInfo&);
   void StringTypeSchema(const CallbackInfo&);
-//  void ImportCSV(const CallbackInfo&);
+  void ImportCSV(const CallbackInfo&);
   void Schema(const CallbackInfo&);
   void Add(const CallbackInfo&);
-  orc::StructVectorBatch* GetBatchRoot()
-  {
-    if (!batch) {
-      Napi::Error::New(Env(), "Schema must be defined first")
-        .ThrowAsJavaScriptException();
-      return nullptr;
-    } else {
-      return dynamic_cast<orc::StructVectorBatch*>(batch.get());
-    }
-  }
-  void AddLongColumn(const Napi::Array&, int);
-  void AddStringColumn(const Napi::Array&, int);
-  void AddDoubleColumn(const Napi::Array&, int);
-  void AddDecimalColumn(const Napi::Array&, uint64_t scale, uint64_t precision, int structIndex);
-  void AddBoolColumn(const Napi::Array&,int);
-  void AddDateColumn(const Napi::Array&,int);
-  void AddTimestampColumn(const Napi::Array&,int);
 
 
   unique_ptr<orc::OutputStream> output;
@@ -53,9 +56,10 @@ public:
   orc::WriterOptions options;
   unique_ptr<orc::DataBuffer<char>> buffer;
   std::vector<std::pair<std::string, orc::TypeKind>> schema;
-  uint64_t rows = 0;
   uint64_t batchSize = 1024;
-  u_int64_t bufferOffset = 0;
+  uint64_t bufferOffset = 0;
+  uint64_t batchOffset = 0;
+
 };
 }
 #endif // NORC_WRITER_H
