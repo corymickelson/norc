@@ -201,10 +201,10 @@ Writer::Add(const CallbackInfo& info)
       return;
     }
     switch (schema[i].second) {
-      case BYTE:
-      case INT:
-      case SHORT:
-      case LONG: {
+      case TypeKind::BYTE:
+      case TypeKind::INT:
+      case TypeKind::SHORT:
+      case TypeKind::LONG: {
         auto longBatch = dynamic_cast<LongVectorBatch*>(row->fields[i]);
         if (info[0].As<Object>().Get(p).IsNull()) {
           row->fields[i]->notNull[batchOffset] = 0;
@@ -217,10 +217,10 @@ Writer::Add(const CallbackInfo& info)
         }
         break;
       }
-      case VARCHAR:
-      case CHAR:
-      case STRING:
-      case BINARY: {
+      case TypeKind::VARCHAR:
+      case TypeKind::CHAR:
+      case TypeKind::STRING:
+      case TypeKind::BINARY: {
         auto stringBatch = dynamic_cast<StringVectorBatch*>(row->fields[i]);
         if (info[0].As<Object>().Get(p).IsNull()) {
           row->fields[i]->notNull[batchOffset] = 0;
@@ -240,7 +240,7 @@ Writer::Add(const CallbackInfo& info)
         break;
       }
 
-      case BOOLEAN: {
+      case TypeKind::BOOLEAN: {
         auto boolBatch = dynamic_cast<LongVectorBatch*>(row->fields[i]);
         if (info[0].As<Object>().Get(p).IsNull()) {
           row->fields[i]->notNull[batchOffset] = 0;
@@ -253,8 +253,8 @@ Writer::Add(const CallbackInfo& info)
         boolBatch->numElements = batchOffset;
         break;
       }
-      case FLOAT:
-      case DOUBLE: {
+      case TypeKind::FLOAT:
+      case TypeKind::DOUBLE: {
         auto dblBatch = dynamic_cast<DoubleVectorBatch*>(row->fields[i]);
         if (info[0].As<Object>().Get(p).IsNull()) {
           row->fields[i]->notNull[batchOffset] = 0;
@@ -267,7 +267,7 @@ Writer::Add(const CallbackInfo& info)
         dblBatch->numElements = batchOffset;
         break;
       }
-      case TIMESTAMP: {
+      case TypeKind::TIMESTAMP: {
         auto tsBatch = dynamic_cast<TimestampVectorBatch*>(row->fields[i]);
         struct tm timeStruct
         {};
@@ -296,7 +296,7 @@ Writer::Add(const CallbackInfo& info)
         tsBatch->numElements = batchOffset;
         break;
       }
-      case DECIMAL: {
+      case TypeKind::DECIMAL: {
         auto precision =
           type->getSubtype(static_cast<uint64_t>(i))->getPrecision();
         auto scale = type->getSubtype(static_cast<uint64_t>(i))->getScale();
@@ -333,7 +333,7 @@ Writer::Add(const CallbackInfo& info)
         break;
       }
 
-      case DATE: {
+      case TypeKind::DATE: {
         auto timeBatch = dynamic_cast<LongVectorBatch*>(row->fields[i]);
         if (info[0].As<Object>().Get(p).IsNull()) {
           row->fields[i]->notNull[batchOffset] = 0;
@@ -354,10 +354,10 @@ Writer::Add(const CallbackInfo& info)
         timeBatch->numElements = batchOffset;
         break;
       }
-      case LIST:
-      case MAP:
-      case STRUCT:
-      case UNION: {
+      case TypeKind::LIST:
+      case TypeKind::MAP:
+      case TypeKind::STRUCT:
+      case TypeKind::UNION: {
         Error::New(
           info.Env(),
           "List, Map, Struct, and Union types are not currently supported")
