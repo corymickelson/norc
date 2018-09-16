@@ -37,6 +37,7 @@ Writer::Initialize(Napi::Env& env, Napi::Object& target)
     { InstanceMethod("stringTypeSchema", &norc::Writer::StringTypeSchema),
       InstanceMethod("close", &norc::Writer::Close),
       InstanceMethod("schema", &norc::Writer::Schema),
+      InstanceMethod("fromCsv", &norc::Writer::ImportCSV),
       InstanceMethod("add", &norc::Writer::Add) });
   constructor = Napi::Persistent(ctor);
   constructor.SuppressDestruct();
@@ -55,6 +56,11 @@ Writer::Writer(const CallbackInfo& info)
   options.setStripeSize((128 << 20));
   options.setCompressionBlockSize((64 << 10));
   options.setCompression(CompressionKind_ZLIB);
+}
+Writer::~Writer()
+{
+  HandleScope scope(Env());
+  cout << "Destructing Writer" << endl;
 }
 void
 Writer::StringTypeSchema(const CallbackInfo& info)
@@ -75,32 +81,103 @@ Writer::Schema(const CallbackInfo& info)
     TypeError::New(info.Env(), "The schema as an Object format is required")
       .ThrowAsJavaScriptException();
   }
-  vector<string> types = { "boolean", "byte",      "short",   "int",
-                           "long",    "float",     "double",  "string",
-                           "binary",  "timestamp", "list",    "map",
-                           "struct",  "union",     "decimal", "date",
-                           "varchar", "char" };
   stringstream typeStr;
   typeStr << "struct<";
   auto schema = info[0].As<Object>();
   auto keys = schema.GetPropertyNames();
   for (uint32_t i = 0; i < keys.Length(); ++i) {
     string k = keys.Get(i).As<String>();
-    TypeKind v = static_cast<TypeKind>(schema.Get(k).As<Number>().Int32Value());
-    this->schema.emplace_back(pair<string, TypeKind>(k, v));
-    if (find(types.begin(), types.end(), types[v]) == types.end()) {
-      Error::New(info.Env(), "Invalid type: " + types[v] + " for key: " + k)
-        .ThrowAsJavaScriptException();
-      break;
+    TypeKind kind;
+    string schemaType;
+    JsSchemaDataType jsv =
+      static_cast<JsSchemaDataType>(schema.Get(k).As<Number>().Int32Value());
+    switch (jsv) {
+      case BOOLEAN: {
+        kind = TypeKind::BOOLEAN;
+        schemaType = "boolean";
+        break;
+      }
+      case TINYINT: {
+        kind = TypeKind::BYTE;
+        schemaType = "tinyint";
+        break;
+      }
+      case SMALLINT: {
+        kind = TypeKind::SHORT;
+        schemaType = "smallint";
+        break;
+      }
+      case INT: {
+        kind = TypeKind::INT;
+        schemaType = "int";
+        break;
+      }
+      case BIGINT: {
+        kind = TypeKind::LONG;
+        schemaType = "long";
+        break;
+      }
+      case FLOAT: {
+        kind = TypeKind::FLOAT;
+        schemaType = "float";
+        break;
+      }
+      case DOUBLE: {
+        kind = TypeKind::DOUBLE;
+        schemaType = "double";
+        break;
+      }
+      case STRING: {
+        kind = TypeKind::STRING;
+        schemaType = "string";
+        break;
+      }
+      case BINARY: {
+        kind = TypeKind::BINARY;
+        schemaType = "binary";
+        break;
+      }
+      case TIMESTAMP: {
+        kind =  TypeKind::TIMESTAMP;
+        schemaType = "timestamp";
+        break;
+      }
+      case DECIMAL: {
+        kind =  TypeKind::DECIMAL;
+        schemaType = "decimal";
+        break;
+      }
+      case DATE: {
+        kind =  TypeKind::DATE;
+        schemaType = "date";
+        break;
+      }
+      case CHAR: {
+        kind = TypeKind::CHAR;
+        schemaType = "char";
+        break;
+      }
+      case VARCHAR: {
+        kind =  TypeKind::VARCHAR;
+        schemaType = "varchar";
+        break;
+      }
+      case ARRAY:
+      case MAP:
+      case STRUCT:
+      case UNION:
+      default:{
+        Error::New(info.Env(), "Unsupported type").ThrowAsJavaScriptException();
+        break;
+      }
     }
-    typeStr << k << ":" << types[v];
-    if (i != keys.Length()-1)
+    this->schema.emplace_back(pair<string, TypeKind>(k, kind));
+    typeStr << k << ":" << schemaType;
+    if (i != keys.Length() - 1)
       typeStr << ",";
   }
   typeStr << ">";
-
   cout << "Setting File Schema as: " << typeStr.str() << endl;
-
   type = Type::buildTypeFromString(typeStr.str());
   writer = createWriter(*type, output.get(), options);
   batch = writer->createRowBatch(batchSize);
@@ -109,69 +186,172 @@ Writer::Schema(const CallbackInfo& info)
 void
 Writer::Add(const CallbackInfo& info)
 {
-  try {
-    string col = info[0].As<String>();
-    auto values = info[1].As<Array>();
-    if (rows == 0) {
-      rows = values.Length();
-    } else if (rows != values.Length()) {
-      Error::New(
-        info.Env(),
-        "Row count has already been defined by a previous call to Add. "
-        "All rows must be of equal length row: " +
-          std::to_string(rows) + " values: " + std::to_string(values.Length()))
+  auto properties = info[0].As<Object>().GetPropertyNames();
+  auto row = dynamic_cast<StructVectorBatch*>(batch.get());
+  if (properties.Length() != schema.size()) {
+    Error::New(info.Env(), "Item does not match schema")
+      .ThrowAsJavaScriptException();
+    return;
+  }
+  for (uint32_t i = 0; i < properties.Length(); i++) {
+    string p = properties.Get(i).As<String>();
+    if (schema[i].first != p) {
+      TypeError::New(info.Env(), "Missing property: " + p)
         .ThrowAsJavaScriptException();
-    }
-    int structIdx = -1;
-    for (int i = 0; i < schema.size(); i++) {
-      if (schema[i].first == col) {
-        structIdx = i;
-        break;
-      }
-    }
-    if (structIdx == -1) {
-      Error::New(info.Env(), col + " not found").ThrowAsJavaScriptException();
       return;
     }
-    switch (schema[structIdx].second) {
+    switch (schema[i].second) {
       case BYTE:
       case INT:
       case SHORT:
       case LONG: {
-        AddLongColumn(values, structIdx);
+        auto longBatch = dynamic_cast<LongVectorBatch*>(row->fields[i]);
+        if (info[0].As<Object>().Get(p).IsNull()) {
+          row->fields[i]->notNull[batchOffset] = 0;
+          longBatch->hasNulls = true;
+        } else {
+          row->fields[i]->notNull[batchOffset] = 1;
+          longBatch->data[batchOffset] =
+            info[0].As<Object>().Get(p).As<Number>().Uint32Value();
+          longBatch->numElements = batchOffset;
+        }
         break;
       }
       case VARCHAR:
       case CHAR:
       case STRING:
       case BINARY: {
-        AddStringColumn(values, structIdx);
+        auto stringBatch = dynamic_cast<StringVectorBatch*>(row->fields[i]);
+        if (info[0].As<Object>().Get(p).IsNull()) {
+          row->fields[i]->notNull[batchOffset] = 0;
+          stringBatch->hasNulls = true;
+        } else {
+          string v = info[0].As<Object>().Get(p).As<String>();
+          row->fields[i]->notNull[batchOffset] = 1;
+          if (buffer->size() - bufferOffset < v.size()) {
+            buffer->reserve(buffer->size() * 2);
+          }
+          memcpy(buffer->data() + bufferOffset, v.c_str(), v.size());
+          stringBatch->data[batchOffset] = buffer->data() + bufferOffset;
+          stringBatch->length[batchOffset] = static_cast<uint64_t>(v.size());
+          bufferOffset += v.size();
+        }
+        stringBatch->numElements = batchOffset;
         break;
       }
 
       case BOOLEAN: {
-        AddBoolColumn(values, structIdx);
+        auto boolBatch = dynamic_cast<LongVectorBatch*>(row->fields[i]);
+        if (info[0].As<Object>().Get(p).IsNull()) {
+          row->fields[i]->notNull[batchOffset] = 0;
+          boolBatch->hasNulls = true;
+        } else {
+          row->fields[i]->notNull[batchOffset] = 1;
+          boolBatch->data[batchOffset] =
+            info[0].As<Object>().Get(p).As<Boolean>();
+        }
+        boolBatch->numElements = batchOffset;
         break;
       }
       case FLOAT:
       case DOUBLE: {
-        AddDoubleColumn(values, structIdx);
+        auto dblBatch = dynamic_cast<DoubleVectorBatch*>(row->fields[i]);
+        if (info[0].As<Object>().Get(p).IsNull()) {
+          row->fields[i]->notNull[batchOffset] = 0;
+          dblBatch->hasNulls = true;
+        } else {
+          row->fields[i]->notNull[batchOffset] = 1;
+          dblBatch->data[batchOffset] =
+            info[0].As<Object>().Get(p).As<Number>().FloatValue();
+        }
+        dblBatch->numElements = batchOffset;
         break;
       }
       case TIMESTAMP: {
-        AddTimestampColumn(values, structIdx);
+        auto tsBatch = dynamic_cast<TimestampVectorBatch*>(row->fields[i]);
+        struct tm timeStruct
+        {};
+        if (info[0].As<Object>().Get(p).IsNull()) {
+          row->fields[i]->notNull[batchOffset] = 0;
+          tsBatch->hasNulls = true;
+        } else {
+          string v = info[0].As<Object>().Get(p).As<String>();
+          memset(&timeStruct, 0, sizeof(timeStruct));
+          char* left = strptime(v.c_str(), "%Y-%m-%d %H:%M:%S", &timeStruct);
+          if (left == nullptr) {
+            row->fields[i]->notNull[batchOffset] = 0;
+          } else {
+            row->fields[i]->notNull[batchOffset] = 1;
+            tsBatch->data[batchOffset] = timegm(&timeStruct);
+            char* tail;
+            double d = strtod(left, &tail);
+            if (tail != left) {
+              tsBatch->nanoseconds[batchOffset] =
+                static_cast<long>(d * 1000000000.0);
+            } else {
+              tsBatch->nanoseconds[batchOffset] = 0;
+            }
+          }
+        }
+        tsBatch->numElements = batchOffset;
         break;
       }
       case DECIMAL: {
-        AddDecimalColumn(
-          values,
-          type->getSubtype(static_cast<uint64_t>(structIdx))->getScale(),
-          type->getSubtype(static_cast<uint64_t>(structIdx))->getPrecision(),
-          structIdx);
+        auto precision =
+          type->getSubtype(static_cast<uint64_t>(i))->getPrecision();
+        auto scale = type->getSubtype(static_cast<uint64_t>(i))->getScale();
+        orc::Decimal128VectorBatch* d128Batch = ORC_NULLPTR;
+        orc::Decimal64VectorBatch* d64Batch = ORC_NULLPTR;
+        if (precision <= 18) {
+          d64Batch = dynamic_cast<orc::Decimal64VectorBatch*>(row->fields[i]);
+          d64Batch->scale = static_cast<int32_t>(scale);
+        } else {
+          d128Batch = dynamic_cast<orc::Decimal128VectorBatch*>(row->fields[i]);
+          d128Batch->scale = static_cast<int32_t>(scale);
+        }
+        if (info[0].As<Object>().Get(p).IsNull()) {
+          row->fields[i]->notNull[batchOffset] = 0;
+          if (precision <= 18) {
+            d64Batch->hasNulls = true;
+          } else {
+            d128Batch->hasNulls = true;
+          }
+
+        } else {
+          auto v = info[0].As<Object>().Get(p).As<Number>().Uint32Value();
+          Int128 decimal(v);
+          row->fields[i]->notNull[batchOffset] = 1;
+
+          if (precision <= 18) {
+            d64Batch->values[i] = decimal.toLong();
+          } else {
+            d128Batch->values[i] = decimal;
+          }
+        }
+
+        d64Batch->numElements = batchOffset;
         break;
       }
+
       case DATE: {
-        AddDateColumn(values, structIdx);
+        auto timeBatch = dynamic_cast<LongVectorBatch*>(row->fields[i]);
+        if (info[0].As<Object>().Get(p).IsNull()) {
+          row->fields[i]->notNull[batchOffset] = 0;
+          timeBatch->hasNulls = true;
+        } else {
+          string v = info[0].As<Object>().Get(p).As<String>();
+          row->fields[i]->notNull[batchOffset] = 1;
+          struct tm tm
+          {};
+          memset(&tm, 0, sizeof(struct tm));
+          strptime(v.c_str(), "%Y-%m-%d", &tm);
+          time_t t = mktime(&tm);
+          time_t t1970 = 0;
+          double seconds = difftime(t, t1970);
+          auto days = static_cast<int64_t>(seconds / (60 * 60 * 24));
+          timeBatch->data[batchOffset] = days;
+        }
+        timeBatch->numElements = batchOffset;
         break;
       }
       case LIST:
@@ -185,419 +365,363 @@ Writer::Add(const CallbackInfo& info)
         break;
       }
     }
-  } catch (...) {
-    Error::New(info.Env(), "Unable to add values to file")
-      .ThrowAsJavaScriptException();
+  }
+  if (batchOffset == batchSize) {
+    row->numElements = batchSize;
+    writer->add(*batch);
+    batchOffset = 0;
+  } else {
+    ++batchOffset;
   }
 }
+
 void
-Writer::AddLongColumn(const Array& data, int structIndex)
+Writer::Close(const CallbackInfo& info)
 {
-  auto row = dynamic_cast<StructVectorBatch*>(batch.get());
-  auto batchCount = ceil(rows / batchSize);
-  int arrayIdx = 0;
-  for (int i = 0; i <= batchCount; i++) {
-    auto longBatch = dynamic_cast<LongVectorBatch*>(row->fields[structIndex]);
+  if (batchOffset > 0) {
+    auto row = dynamic_cast<StructVectorBatch*>(batch.get());
+    row->numElements = batchOffset;
+    writer->add(*batch);
+  }
+  writer->close();
+}
+class ImportCSVWorker : public AsyncWorker
+{
+public:
+  ImportCSVWorker(Function& cb, norc::Writer& self, string csv)
+    : AsyncWorker(cb)
+    , writer(self)
+    , csv(std::move(csv))
+  {}
+
+private:
+  Writer& writer;
+  string csv;
+
+  string columnString(string v, uint64_t idx)
+  {
+    uint64_t col = 0;
+    size_t start = 0;
+    size_t end = v.find(",");
+    while (col < idx && end != string::npos) {
+      start = end + 1;
+      end = v.find(",", start);
+      ++col;
+    }
+    return col == idx ? v.substr(start, end - start) : "";
+  }
+  void setLongTypeValue(const vector<string>& data,
+                        ColumnVectorBatch* batch,
+                        uint64_t valuesRead,
+                        uint64_t idx)
+  {
+    auto longBatch = dynamic_cast<LongVectorBatch*>(batch);
     auto hasNull = false;
-    uint64_t batchItemCount = 0;
-    for (int j = 0; j < batchSize; j++) {
-      if (arrayIdx == data.Length()) {
-        break;
-      }
-      if (data[arrayIdx].IsNull()) {
-        longBatch->notNull[j] = 0;
+    for (uint64_t i = 0; i < valuesRead; i++) {
+      string csvCol = columnString(data[i], idx);
+      if (csvCol.empty()) {
+        batch->notNull[i] = 0;
         hasNull = true;
       } else {
-        longBatch->notNull[j] = 1;
-        int64_t v =  data[arrayIdx].As<Number>();
-        longBatch->data[j] = v;
+        batch->notNull[i] = 1;
+        longBatch->data[i] = atoll(csvCol.c_str());
       }
-      batchItemCount++;
-      arrayIdx++;
     }
     longBatch->hasNulls = hasNull;
-    longBatch->numElements = batchItemCount;
-    row->numElements = batchItemCount;
-    writer->add(*batch);
+    longBatch->numElements = valuesRead;
   }
-}
-void
-Writer::AddStringColumn(const Array& data, int structIndex)
-{
 
-  auto row = dynamic_cast<StructVectorBatch*>(batch.get());
-  auto batchCount = ceil(rows / batchSize);
-  int arrayIdx = 0;
-  for (int i = 0; i <= batchCount; i++) {
-    auto stringBatch =
-      dynamic_cast<StringVectorBatch*>(row->fields[structIndex]);
-    auto hasNull = false;
-    uint64_t batchItemCount = 0;
-    for (int j = 0; j < batchSize; j++) {
-      if (arrayIdx == data.Length()) {
-        break;
-      }
-      string v = data[arrayIdx].As<String>();
-      if (v.empty()) {
-        batch->notNull[j] = 0;
+  void setStringTypeValue(const vector<string>& data,
+                          ColumnVectorBatch* batch,
+                          uint64_t valuesRead,
+                          uint64_t idx,
+                          DataBuffer<char>& buffer,
+                          uint64_t& offset)
+  {
+    auto stringBatch = dynamic_cast<StringVectorBatch*>(batch);
+    bool hasNull = false;
+    for (uint64_t i = 0; i < valuesRead; i++) {
+      auto csvCol = columnString(data[i], idx);
+      if (csvCol.empty()) {
+        batch->notNull[i] = 0;
         hasNull = true;
       } else {
-        batch->notNull[j] = 1;
-        if (buffer->size() - bufferOffset < v.size()) {
-          buffer->reserve(buffer->size() * 2);
+        batch->notNull[i] = 1;
+        if (buffer.size() - offset < csvCol.size()) {
+          buffer.reserve(buffer.size() * 2);
         }
-        memcpy(buffer->data() + bufferOffset, v.c_str(), v.size());
-        stringBatch->data[j] = buffer->data() + bufferOffset;
-        stringBatch->length[j] = static_cast<uint64_t>(v.size());
-        bufferOffset += v.size();
+        memcpy(buffer.data() + offset, csvCol.c_str(), csvCol.size());
+        stringBatch->data[i] = buffer.data() + offset;
+        stringBatch->length[i] = static_cast<uint64_t>(csvCol.size());
+        offset += csvCol.size();
       }
-      batchItemCount++;
-      arrayIdx++;
     }
     stringBatch->hasNulls = hasNull;
-    stringBatch->numElements = batchItemCount;
-    row->numElements = batchItemCount;
-    writer->add(*batch);
+    stringBatch->numElements = valuesRead;
   }
-}
-void
-Writer::AddDoubleColumn(const Array& data, int structIndex)
-{
-  auto row = dynamic_cast<StructVectorBatch*>(batch.get());
-  auto batchCount = ceil(rows / batchSize);
-  int arrayIdx = 0;
-  for (int i = 0; i <= batchCount; i++) {
-    auto dblBatch = dynamic_cast<DoubleVectorBatch*>(row->fields[structIndex]);
-    auto hasNull = false;
-    uint64_t batchItemCount = 0;
-    for (int j = 0; j < batchSize; j++) {
-      if (arrayIdx == data.Length()) {
-        break;
-      }
-      if (data[arrayIdx].IsNull()) {
-        batch->notNull[j] = 0;
+  void setDoubleTypeValues(const vector<string>& data,
+                           ColumnVectorBatch* batch,
+                           uint64_t numValues,
+                           uint64_t colIndex)
+  {
+    auto dblBatch = dynamic_cast<DoubleVectorBatch*>(batch);
+    bool hasNull = false;
+    for (uint64_t i = 0; i < numValues; ++i) {
+      std::string col = columnString(data[i], colIndex);
+      if (col.empty()) {
+        batch->notNull[i] = 0;
         hasNull = true;
       } else {
-        batch->notNull[j] = 1;
-        dblBatch->data[j] = data[arrayIdx].As<Number>().FloatValue();
+        batch->notNull[i] = 1;
+        dblBatch->data[i] = atof(col.c_str());
       }
-      batchItemCount++;
-      arrayIdx++;
     }
     dblBatch->hasNulls = hasNull;
-    dblBatch->numElements = batchItemCount;
-    row->numElements = batchItemCount;
-    writer->add(*batch);
+    dblBatch->numElements = numValues;
   }
-}
 
-// parse fixed point decimal numbers
-void
-Writer::AddDecimalColumn(const Array& data,
-                         uint64_t scale,
-                         uint64_t precision,
-                         int structIndex)
-{
+  // parse fixed point decimal numbers
+  void setDecimalTypeValue(const vector<string>& data,
+                           ColumnVectorBatch* batch,
+                           uint64_t numValues,
+                           uint64_t colIndex,
+                           size_t scale,
+                           size_t precision)
+  {
 
-  auto row = dynamic_cast<StructVectorBatch*>(batch.get());
-  auto batchCount = ceil(rows / batchSize);
-  int arrayIdx = 0;
-
-  for (int i = 0; i <= batchCount; i++) {
     Decimal128VectorBatch* d128Batch = nullptr;
     Decimal64VectorBatch* d64Batch = nullptr;
     if (precision <= 18) {
-      d64Batch = dynamic_cast<Decimal64VectorBatch*>(row->fields[structIndex]);
+      d64Batch = dynamic_cast<Decimal64VectorBatch*>(batch);
       d64Batch->scale = static_cast<int32_t>(scale);
     } else {
-      d128Batch =
-        dynamic_cast<Decimal128VectorBatch*>(row->fields[structIndex]);
+      d128Batch = dynamic_cast<Decimal128VectorBatch*>(batch);
       d128Batch->scale = static_cast<int32_t>(scale);
     }
-    auto hasNull = false;
-
-    uint64_t batchItemCount = 0;
-    for (int j = 0; j < batchSize; j++) {
-      if (arrayIdx == data.Length()) {
-        break;
-      }
-      if (data[arrayIdx].IsNull()) {
-        batch->notNull[j] = 0;
+    bool hasNull = false;
+    for (uint64_t i = 0; i < numValues; ++i) {
+      string col = columnString(data[i], colIndex);
+      if (col.empty()) {
+        batch->notNull[i] = 0;
         hasNull = true;
       } else {
-        batch->notNull[j] = 1;
-        auto v = data[arrayIdx].As<Number>().Uint32Value();
-        Int128 decimal(v);
+        batch->notNull[i] = 1;
+        size_t ptPos = col.find('.');
+        size_t curScale = 0;
+        string num = col;
+        if (ptPos != string::npos) {
+          curScale = col.length() - ptPos - 1;
+          num = col.substr(0, ptPos) + col.substr(ptPos + 1);
+        }
+        Int128 decimal(num);
+        while (curScale != scale) {
+          curScale++;
+          decimal *= 10;
+        }
         if (precision <= 18) {
-          d64Batch->values[j] = decimal.toLong();
+          d64Batch->values[i] = decimal.toLong();
         } else {
-          d128Batch->values[j] = decimal;
+          d128Batch->values[i] = decimal;
         }
       }
-      batchItemCount++;
-      arrayIdx++;
     }
     batch->hasNulls = hasNull;
-    batch->numElements = batchItemCount;
-    row->numElements = batchItemCount;
-    writer->add(*batch);
+    batch->numElements = numValues;
   }
-}
 
-void
-Writer::AddBoolColumn(const Array& data, int structIndex)
-{
-  auto row = dynamic_cast<StructVectorBatch*>(batch.get());
-  auto batchCount = ceil(rows / batchSize);
-  int arrayIdx = 0;
-  for (int i = 0; i <= batchCount; i++) {
-    auto boolBatch = dynamic_cast<LongVectorBatch*>(row->fields[structIndex]);
-    auto hasNull = false;
-    uint64_t batchItemCount = 0;
-    for (int j = 0; j < batchSize; j++) {
-      if (arrayIdx == data.Length()) {
-        break;
-      }
-      if (data[arrayIdx].IsNull()) {
-        batch->notNull[j] = 0;
+  void setBoolTypeValue(const vector<string>& data,
+                        ColumnVectorBatch* batch,
+                        uint64_t numValues,
+                        uint64_t colIndex)
+  {
+    auto boolBatch = dynamic_cast<LongVectorBatch*>(batch);
+    bool hasNull = false;
+    for (uint64_t i = 0; i < numValues; ++i) {
+      string col = columnString(data[i], colIndex);
+      if (col.empty()) {
+        batch->notNull[i] = 0;
         hasNull = true;
       } else {
-        batch->notNull[j] = 1;
-        boolBatch->data[j] = data[arrayIdx].As<Boolean>();
+        batch->notNull[i] = 1;
+        std::transform(col.begin(), col.end(), col.begin(), ::tolower);
+        if (col == "true" || col == "t") {
+          boolBatch->data[i] = true;
+        } else {
+          boolBatch->data[i] = false;
+        }
       }
-
-      batchItemCount++;
-      arrayIdx++;
     }
     boolBatch->hasNulls = hasNull;
-    boolBatch->numElements = batchItemCount;
-    row->numElements = batchItemCount;
-    writer->add(*batch);
+    boolBatch->numElements = numValues;
   }
-}
 
-// parse date string from format YYYY-mm-dd
-void
-Writer::AddDateColumn(const Array& data, int structIndex)
-{
-  auto row = dynamic_cast<StructVectorBatch*>(batch.get());
-  auto batchCount = ceil(rows / batchSize);
-  int arrayIdx = 0;
-  for (int i = 0; i <= batchCount; i++) {
-    auto timeBatch = dynamic_cast<LongVectorBatch*>(row->fields[structIndex]);
-    auto hasNull = false;
-    uint64_t batchItemCount = 0;
-    for (int j = 0; j < batchSize; j++) {
-      if (arrayIdx == data.Length()) {
-        break;
-      }
-      if (data[arrayIdx].IsNull()) {
-        batch->notNull[j] = 0;
+  // parse date string from format YYYY-mm-dd
+  void setDateTypeValue(const std::vector<std::string>& data,
+                        orc::ColumnVectorBatch* batch,
+                        uint64_t numValues,
+                        uint64_t colIndex)
+  {
+    orc::LongVectorBatch* longBatch =
+      dynamic_cast<orc::LongVectorBatch*>(batch);
+    bool hasNull = false;
+    for (uint64_t i = 0; i < numValues; ++i) {
+      std::string col = columnString(data[i], colIndex);
+      if (col.empty()) {
+        batch->notNull[i] = 0;
         hasNull = true;
       } else {
-        string v = data[arrayIdx].As<String>();
-        batch->notNull[j] = 1;
-        struct tm tm
-        {};
+        batch->notNull[i] = 1;
+        struct tm tm;
         memset(&tm, 0, sizeof(struct tm));
-        strptime(v.c_str(), "%Y-%m-%d", &tm);
+        strptime(col.c_str(), "%Y-%m-%d", &tm);
         time_t t = mktime(&tm);
         time_t t1970 = 0;
         double seconds = difftime(t, t1970);
-        auto days = static_cast<int64_t>(seconds / (60 * 60 * 24));
-        timeBatch->data[j] = days;
+        int64_t days = static_cast<int64_t>(seconds / (60 * 60 * 24));
+        longBatch->data[i] = days;
       }
-      batchItemCount++;
-      arrayIdx++;
     }
-    timeBatch->hasNulls = hasNull;
-    timeBatch->numElements = batchItemCount;
-    row->numElements = batchItemCount;
-    writer->add(*batch);
+    longBatch->hasNulls = hasNull;
+    longBatch->numElements = numValues;
   }
-}
-void
-Writer::AddTimestampColumn(const Array& data, int structIndex)
-{
-  auto row = dynamic_cast<StructVectorBatch*>(batch.get());
-  auto batchCount = ceil(rows / batchSize);
-  int arrayIdx = 0;
-  for (int i = 0; i <= batchCount; i++) {
-    auto tsBatch =
-      dynamic_cast<TimestampVectorBatch*>(row->fields[structIndex]);
-    auto hasNull = false;
-    uint64_t batchItemCount = 0;
-    for (int j = 0; j < batchSize; j++) {
-      if (arrayIdx == data.Length()) {
-        break;
-      }
-      struct tm timeStruct
-      {};
-      if (data[arrayIdx].IsNull()) {
-        batch->notNull[j] = 0;
+  void setTimestampTypeValue(const std::vector<std::string>& data,
+                             orc::ColumnVectorBatch* batch,
+                             uint64_t numValues,
+                             uint64_t colIndex)
+  {
+    struct tm timeStruct;
+    orc::TimestampVectorBatch* tsBatch =
+      dynamic_cast<orc::TimestampVectorBatch*>(batch);
+    bool hasNull = false;
+    for (uint64_t i = 0; i < numValues; ++i) {
+      std::string col = columnString(data[i], colIndex);
+      if (col.empty()) {
+        batch->notNull[i] = 0;
         hasNull = true;
       } else {
-        string v = data[arrayIdx].As<String>();
         memset(&timeStruct, 0, sizeof(timeStruct));
-        char* left = strptime(v.c_str(), "%Y-%m-%d %H:%M:%S", &timeStruct);
+        char* left = strptime(col.c_str(), "%Y-%m-%d %H:%M:%S", &timeStruct);
         if (left == nullptr) {
-          batch->notNull[j] = 0;
+          batch->notNull[i] = 0;
         } else {
-          batch->notNull[j] = 1;
-          tsBatch->data[j] = timegm(&timeStruct);
+          batch->notNull[i] = 1;
+          tsBatch->data[i] = timegm(&timeStruct);
           char* tail;
           double d = strtod(left, &tail);
           if (tail != left) {
-            tsBatch->nanoseconds[j] = static_cast<long>(d * 1000000000.0);
+            tsBatch->nanoseconds[i] = static_cast<long>(d * 1000000000.0);
           } else {
-            tsBatch->nanoseconds[j] = 0;
+            tsBatch->nanoseconds[i] = 0;
           }
         }
       }
-      batchItemCount++;
-      arrayIdx++;
     }
     tsBatch->hasNulls = hasNull;
-    tsBatch->numElements = batchItemCount;
-    row->numElements = batchItemCount;
-    writer->add(*batch);
+    tsBatch->numElements = numValues;
   }
-}
-void
-Writer::Close(const CallbackInfo&)
-{
-  writer->close();
-}
 
-// class ImportCSVWorker : public AsyncWorker
-//{
-// public:
-//  ImportCSVWorker(Function& cb, norc::Writer& self, string csv)
-//    : AsyncWorker(cb)
-//    , writer(self)
-//    , csv(std::move(csv))
-//  {}
-//
-// private:
-//  Writer& writer;
-//  string csv;
-//
-//  string columnString(const string& v, uint64_t idx)
-//  {
-//    uint64_t col = 0;
-//    size_t start = 0;
-//    size_t end = v.find(',');
-//    while (col < idx && end != string::npos) {
-//      start = end + 1;
-//      end = v.find(',', start);
-//      ++col;
-//    }
-//    return col == idx ? v.substr(start, end - start) : "";
-//  }
-//
-// protected:
-//  void Execute() override
-//  {
-//    ifstream source(csv.c_str());
-//    if (!source.good()) {
-//      SetError("Unable to open/read csv file");
-//      return;
-//    }
-//    bool eof = false;
-//    string line;
-//    vector<string> data;
-//    unique_ptr<ColumnVectorBatch> row = writer.writer->createRowBatch(1024);
-//    DataBuffer<char> buffer(*getDefaultPool(), 4 * 1024 * 1024);
-//    while (!eof) {
-//      uint64_t valuesRead = 0;
-//      uint64_t bufferOffset = 0;
-//      data.clear();
-//      memset(row->notNull.data(), 1, 1024);
-//      for (uint64_t i = 0; i < 1024; i++) {
-//        if (!std::getline(source, line)) {
-//          eof = true;
-//          break;
-//        }
-//        data.emplace_back(line);
-//        ++valuesRead;
-//      }
-//      if (valuesRead > 0) {
-//        auto batch = dynamic_cast<StructVectorBatch*>(row.get());
-//        batch->numElements = valuesRead;
-//        for (uint64_t i = 0; i < batch->fields.size(); i++) {
-//          auto subType = writer.type->getSubtype(i);
-//          switch (subType->getKind()) {
-//            case BYTE:
-//            case INT:
-//            case SHORT:
-//            case LONG:
-//              setLongTypeValue(data, batch->fields[i], valuesRead, i);
-//              break;
-//            case STRING:
-//            case VARCHAR:
-//            case CHAR:
-//            case BINARY:
-//              setStringTypeValue(
-//                data, batch->fields[i], valuesRead, i, buffer, bufferOffset);
-//              break;
-//
-//            case FLOAT:
-//            case DOUBLE:
-//              setDoubleTypeValues(data, batch->fields[i], valuesRead, i);
-//              break;
-//
-//            case BOOLEAN:
-//              setBoolTypeValue(data, batch->fields[i], valuesRead, i);
-//              break;
-//
-//            case DECIMAL:
-//              setDecimalTypeValue(data,
-//                                  batch->fields[i],
-//                                  valuesRead,
-//                                  i,
-//                                  subType->getScale(),
-//                                  subType->getPrecision());
-//              break;
-//
-//            case TIMESTAMP:
-//              setTimestampTypeValue(data, batch->fields[i], valuesRead, i);
-//              break;
-//            case DATE:
-//              setDateTypeValue(data, batch->fields[i], valuesRead, i);
-//              break;
-//
-//            case LIST:
-//            case MAP:
-//            case STRUCT:
-//            case UNION:
-//              SetError(subType->toString() + " is not yet supported");
-//              break;
-//          }
-//        }
-//        writer.writer->add(*row);
-//      }
-//    }
-//  }
-//  void OnOK() override
-//  {
-//    HandleScope scope(Env());
-//    Callback().Call({ Env().Undefined(), writer.Value() });
-//  }
-//};
-// void
-// Writer::ImportCSV(const CallbackInfo& info)
-//{
-//  if (!writer) {
-//    Error::New(info.Env(), "A schema must be defined before importing csv
-//    data")
-//      .ThrowAsJavaScriptException();
-//  }
-//  if (info.Length() < 2 || !info[0].IsString() || !info[1].IsFunction()) {
-//    Error::New(info.Env(), "File path and callback are required")
-//      .ThrowAsJavaScriptException();
-//  }
-//  auto cb = info[1].As<Function>();
-//  auto worker = new ImportCSVWorker(cb, *this, info[0].As<String>());
-//  worker->Queue();
-//}
+protected:
+  void Execute() override
+  {
+    ifstream source(csv.c_str());
+    if (!source.good()) {
+      SetError("Unable to open/read csv file");
+      return;
+    }
+    bool eof = false;
+    string line;
+    vector<string> data;
+    unique_ptr<ColumnVectorBatch> row = writer.writer->createRowBatch(1024);
+    DataBuffer<char> buffer(*getDefaultPool(), 4 * 1024 * 1024);
+    while (!eof) {
+      uint64_t valuesRead = 0;
+      uint64_t bufferOffset = 0;
+      data.clear();
+      memset(row->notNull.data(), 1, 1024);
+      for (uint64_t i = 0; i < 1024; i++) {
+        if (!std::getline(source, line)) {
+          eof = true;
+          break;
+        }
+        data.emplace_back(line);
+        ++valuesRead;
+      }
+      if (valuesRead > 0) {
+        auto batch = dynamic_cast<StructVectorBatch*>(row.get());
+        batch->numElements = valuesRead;
+        for (uint64_t i = 0; i < batch->fields.size(); i++) {
+          auto subType = writer.type->getSubtype(i);
+          switch (subType->getKind()) {
+            case BYTE:
+            case INT:
+            case SHORT:
+            case LONG:
+              setLongTypeValue(data, batch->fields[i], valuesRead, i);
+              break;
+            case STRING:
+            case VARCHAR:
+            case CHAR:
+            case BINARY:
+              setStringTypeValue(
+                data, batch->fields[i], valuesRead, i, buffer, bufferOffset);
+              break;
+
+            case FLOAT:
+            case DOUBLE:
+              setDoubleTypeValues(data, batch->fields[i], valuesRead, i);
+              break;
+
+            case BOOLEAN:
+              setBoolTypeValue(data, batch->fields[i], valuesRead, i);
+              break;
+
+            case DECIMAL:
+              setDecimalTypeValue(data,
+                                  batch->fields[i],
+                                  valuesRead,
+                                  i,
+                                  subType->getScale(),
+                                  subType->getPrecision());
+              break;
+
+            case TIMESTAMP:
+              setTimestampTypeValue(data, batch->fields[i], valuesRead, i);
+              break;
+            case DATE:
+              setDateTypeValue(data, batch->fields[i], valuesRead, i);
+              break;
+
+            case LIST:
+            case MAP:
+            case STRUCT:
+            case UNION:
+              SetError(subType->toString() + " is not yet supported");
+              break;
+          }
+        }
+        writer.writer->add(*row);
+      }
+    }
+  }
+  void OnOK() override
+  {
+    HandleScope scope(Env());
+    Callback().Call({ Env().Undefined(), writer.Value() });
+  }
+};
+void
+Writer::ImportCSV(const CallbackInfo& info)
+{
+  if (!writer) {
+    Error::New(info.Env(), "A schema must be defined before importing csv data")
+      .ThrowAsJavaScriptException();
+  }
+  if (info.Length() < 2 || !info[0].IsString() || !info[1].IsFunction()) {
+    Error::New(info.Env(), "File path and callback are required")
+      .ThrowAsJavaScriptException();
+  }
+  auto cb = info[1].As<Function>();
+  auto worker = new ImportCSVWorker(cb, *this, info[0].As<String>());
+  worker->Queue();
+}
 }

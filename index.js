@@ -3,17 +3,18 @@ exports.norc = addon
 Object.defineProperty(exports, "__esModule", {value: true})
 let DataType;
 (function(DataType) {
+
     DataType[DataType["BOOLEAN"] = 0] = "BOOLEAN";
-    DataType[DataType["BYTE"] = 1] = "BYTE";
-    DataType[DataType["SHORT"] = 2] = "SHORT";
+    DataType[DataType["TINYINT"] = 1] = "TINYINT";
+    DataType[DataType["SMALLINT"] = 2] = "SMALLINT";
     DataType[DataType["INT"] = 3] = "INT"
-    DataType[DataType["LONG"] = 4] = "LONG";
+    DataType[DataType["BIGINT"] = 4] = "BIGINT";
     DataType[DataType["FLOAT"] = 5] = "FLOAT"
     DataType[DataType["DOUBLE"] = 6] = "DOUBLE"
     DataType[DataType["STRING"] = 7] = "STRING"
     DataType[DataType["BINARY"] = 8] = "BINARY"
     DataType[DataType["TIMESTAMP"] = 9] = "TIMESTAMP"
-    DataType[DataType["LIST"] = 10] = "LIST"
+    DataType[DataType["ARRAY"] = 10] = "ARRAY"
     DataType[DataType["MAP"] = 11] = "MAP"
     DataType[DataType["STRUCT"] = 12] = "STRUCT"
     DataType[DataType["UNION"] = 13] = "UNION"
