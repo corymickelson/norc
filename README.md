@@ -24,17 +24,19 @@ with `npm i -S https://github.com/nPilots/norc/releases/download/{version}/norc-
 
 Convert a csv file to an orc file.
 ```typescript
-import {norc} from '@npilots/norc'
-function convert(csv:string, output:string, schema:string): void {
+import {norc, DataType} from '@npilots/norc'
+import {fromPath} from 'fast-csv'
+function convert(csv:string, output:string): void {
     const writer = new norc.Writer(output)
-    writer.stringTypeSchema(schema)
-    writer.importCSV(csv, (err, data) => {
-        if(err) {
-            // handle error
-        } else {
-            // close the writer to complete the file
+    const schema = {x: DataType.SMALLINT, y: DataType.SMALLINT}
+    writer.schema(schema)
+    fromPath(csv,{ headers: true })
+        .on('data', chunk => {
+            writer.add({x: chunk.x, y: chunk.y})
+        })
+        .on('end', () => {
             writer.close()
-        }
-    })
+            // do something with .orc file
+        })
 }
 ```
