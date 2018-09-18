@@ -1,5 +1,29 @@
-const addon = require('bindings')('norc')
-exports.norc = addon
+const {Reader: InternalReader, Writer}= require('bindings')('norc')
+const {EventEmitter} = require('events')
+const {inherits} = require('util')
+inherits(InternalReader, EventEmitter)
+class Reader extends InternalReader {
+    constructor(input) {
+        super(input)
+    }
+    read(opts, cb) {
+        if(!opts && !cb) {
+            super.read(() => {})
+        } else if(typeof(opts) === 'function') {
+            super.read({resultType: 'iterator'}, opts)
+        } else if(typeof(opts) === 'object' && !cb) {
+            opts.resultType = 'event'
+            super.read(opts, () => {})
+        } else if(typeof(opts) === 'object' && typeof(cb) === 'function') {
+            super.read(Object.assign(opts, {resultType: 'iterator'}), cb)
+        }
+    }
+}
+let exp = {}
+exp.Reader = Reader
+exp.Writer = Writer
+exports.norc = exp
+
 Object.defineProperty(exports, "__esModule", {value: true})
 let DataType;
 (function(DataType) {

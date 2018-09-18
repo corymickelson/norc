@@ -12,6 +12,8 @@ set(CMAKE_CXX_FLAGS -fPIC)
 set(CMAKE_EXPORT_COMPILE_COMMANDS "yes")
 
 file(GLOB SOURCE_FILES
+        "include/*.hh"
+        "include/*.hpp"
         "src/*.h"
         "src/*.cc")
 
@@ -28,6 +30,7 @@ endif()
 message(WARNING "Using napi: ${NAPI_MODULE}")
 target_include_directories(${PROJECT_NAME} PRIVATE
         ${NAPI_MODULE}
+        ${NAPI_MODULE}/include
         ${NAPI_SRC}
         ${CMAKE_JS_INC})
 target_link_libraries(${PROJECT_NAME} PRIVATE ${CMAKE_JS_LIB})
