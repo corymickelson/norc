@@ -40,3 +40,26 @@ function convert(csv:string, output:string): void {
         })
 }
 ```
+
+Read a file
+```typescript
+import {norc: {Reader}} from '@npilot/norc'
+// Read as iterator
+const reader = new Reader('/path/to/orcfile')
+reader.read({columns: ['id', 'foobar']}, (err, it) => {
+    let i = it.next()
+    while(!i.done) {
+        // do something with i.value
+        i = it.next()
+    }
+})
+// Read and listen .on('data')
+reader.on('data', chunk => {
+    chunk = JSON.parse(chunk)
+    // do something with chunk
+})
+reader.on('end', () => {
+    // end of contents
+})
+reader.read()
+```
