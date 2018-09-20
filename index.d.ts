@@ -57,6 +57,7 @@ export namespace norc {
         fromCsv(file: string, cb: (err: Error, norc: Writer) => void): void
         schema(v: {[key:string]: DataType}): void
         add(row: {[key:string]: string|boolean|number}): void
+        add(rows: {[key:string]: string|boolean|number}[]): void
         close(): void
     }
 }

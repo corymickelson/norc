@@ -186,7 +186,19 @@ Writer::Schema(const CallbackInfo& info)
 void
 Writer::Add(const CallbackInfo& info)
 {
-  auto properties = info[0].As<Object>().GetPropertyNames();
+  if (info.Length() > 0 && info[0].IsArray()) {
+    Array chunk = info[0].As<Array>();
+    for (unsigned int i = 0; i < chunk.Length(); i++) {
+      AddObject(info, chunk.Get(static_cast<uint32_t>(i)).As<Object>());
+    }
+  } else if (info.Length() > 0 && info[0].IsObject()) {
+    AddObject(info, info[0].As<Object>());
+  }
+}
+void
+Writer::AddObject(const CallbackInfo& info, Object value)
+{
+  auto properties = value.GetPropertyNames();
   auto row = dynamic_cast<StructVectorBatch*>(batch.get());
   if (properties.Length() != schema.size()) {
     Error::New(info.Env(), "Item does not match schema")
@@ -217,13 +229,13 @@ Writer::Add(const CallbackInfo& info)
       case TypeKind::SHORT:
       case TypeKind::LONG: {
         auto longBatch = dynamic_cast<LongVectorBatch*>(row->fields[idx]);
-        if (info[0].As<Object>().Get(p).IsNull()) {
+        if (value.Get(p).IsNull()) {
           row->fields[idx]->notNull[batchOffset] = 0;
           longBatch->hasNulls = true;
         } else {
           row->fields[idx]->notNull[batchOffset] = 1;
           longBatch->data[batchOffset] =
-            info[0].As<Object>().Get(p).As<Number>().Uint32Value();
+            value.Get(p).As<Number>().Uint32Value();
           longBatch->numElements = batchOffset;
         }
         break;
@@ -233,18 +245,18 @@ Writer::Add(const CallbackInfo& info)
       case TypeKind::STRING:
       case TypeKind::BINARY: {
         auto stringBatch = dynamic_cast<StringVectorBatch*>(row->fields[idx]);
-        if (info[0].As<Object>().Get(p).IsNull()) {
+        if (value.Get(p).IsNull()) {
           row->fields[idx]->notNull[batchOffset] = 0;
           stringBatch->hasNulls = true;
         } else {
-          string v = info[0].As<Object>().Get(p).As<String>();
+          string v = value.Get(p).As<String>();
           row->fields[idx]->notNull[batchOffset] = 1;
           if (buffer->size() - bufferOffset < v.size()) {
             buffer->reserve(buffer->size() * 2);
           }
           memcpy(buffer->data() + bufferOffset, v.c_str(), v.size());
           stringBatch->data[batchOffset] = buffer->data() + bufferOffset;
-          stringBatch->length[batchOffset] = static_cast<uint64_t>(v.size());
+          stringBatch->length[batchOffset] = static_cast<long>(v.size());
           bufferOffset += v.size();
         }
         stringBatch->numElements = batchOffset;
@@ -253,13 +265,12 @@ Writer::Add(const CallbackInfo& info)
 
       case TypeKind::BOOLEAN: {
         auto boolBatch = dynamic_cast<LongVectorBatch*>(row->fields[idx]);
-        if (info[0].As<Object>().Get(p).IsNull()) {
+        if (value.Get(p).IsNull()) {
           row->fields[idx]->notNull[batchOffset] = 0;
           boolBatch->hasNulls = true;
         } else {
           row->fields[idx]->notNull[batchOffset] = 1;
-          boolBatch->data[batchOffset] =
-            info[0].As<Object>().Get(p).As<Boolean>();
+          boolBatch->data[batchOffset] = value.Get(p).As<Boolean>();
         }
         boolBatch->numElements = batchOffset;
         break;
@@ -267,13 +278,12 @@ Writer::Add(const CallbackInfo& info)
       case TypeKind::FLOAT:
       case TypeKind::DOUBLE: {
         auto dblBatch = dynamic_cast<DoubleVectorBatch*>(row->fields[idx]);
-        if (info[0].As<Object>().Get(p).IsNull()) {
+        if (value.Get(p).IsNull()) {
           row->fields[idx]->notNull[batchOffset] = 0;
           dblBatch->hasNulls = true;
         } else {
           row->fields[idx]->notNull[batchOffset] = 1;
-          dblBatch->data[batchOffset] =
-            info[0].As<Object>().Get(p).As<Number>().FloatValue();
+          dblBatch->data[batchOffset] = value.Get(p).As<Number>().DoubleValue();
         }
         dblBatch->numElements = batchOffset;
         break;
@@ -282,11 +292,11 @@ Writer::Add(const CallbackInfo& info)
         auto tsBatch = dynamic_cast<TimestampVectorBatch*>(row->fields[idx]);
         struct tm timeStruct
         {};
-        if (info[0].As<Object>().Get(p).IsNull()) {
+        if (value.Get(p).IsNull()) {
           row->fields[idx]->notNull[batchOffset] = 0;
           tsBatch->hasNulls = true;
         } else {
-          string v = info[0].As<Object>().Get(p).As<String>();
+          string v = value.Get(p).As<String>();
           memset(&timeStruct, 0, sizeof(timeStruct));
           char* left = strptime(v.c_str(), "%Y-%m-%d %H:%M:%S", &timeStruct);
           if (left == nullptr) {
@@ -321,7 +331,7 @@ Writer::Add(const CallbackInfo& info)
             dynamic_cast<orc::Decimal128VectorBatch*>(row->fields[idx]);
           d128Batch->scale = static_cast<int32_t>(scale);
         }
-        if (info[0].As<Object>().Get(p).IsNull()) {
+        if (value.Get(p).IsNull()) {
           row->fields[idx]->notNull[batchOffset] = 0;
           if (precision <= 18) {
             d64Batch->hasNulls = true;
@@ -330,7 +340,7 @@ Writer::Add(const CallbackInfo& info)
           }
 
         } else {
-          auto v = info[0].As<Object>().Get(p).As<Number>().Uint32Value();
+          auto v = value.Get(p).As<Number>().Uint32Value();
           Int128 decimal(v);
           row->fields[idx]->notNull[batchOffset] = 1;
 
@@ -347,11 +357,11 @@ Writer::Add(const CallbackInfo& info)
 
       case TypeKind::DATE: {
         auto timeBatch = dynamic_cast<LongVectorBatch*>(row->fields[idx]);
-        if (info[0].As<Object>().Get(p).IsNull()) {
+        if (value.Get(p).IsNull()) {
           row->fields[idx]->notNull[batchOffset] = 0;
           timeBatch->hasNulls = true;
         } else {
-          string v = info[0].As<Object>().Get(p).As<String>();
+          string v = value.Get(p).As<String>();
           row->fields[idx]->notNull[batchOffset] = 1;
           struct tm tm
           {};
@@ -383,7 +393,7 @@ Writer::Add(const CallbackInfo& info)
 }
 
 void
-Writer::Close(const CallbackInfo& info)
+Writer::Close(const CallbackInfo&)
 {
   if (batchOffset > 0) {
     auto row = dynamic_cast<StructVectorBatch*>(batch.get());

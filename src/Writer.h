@@ -5,35 +5,36 @@
 #ifndef NORC_WRITER_H
 #define NORC_WRITER_H
 
+#include <map>
 #include <napi.h>
 #include <orc/OrcFile.hh>
-#include <map>
 
 using Napi::CallbackInfo;
+using std::string;
 using std::unique_ptr;
 using std::vector;
-using std::string;
 
 namespace norc {
-enum JsSchemaDataType {
-      BOOLEAN = 0,
-    TINYINT,
-    SMALLINT,
-    INT,
-    BIGINT,
-    FLOAT,
-    DOUBLE,
-    STRING,
-    BINARY,
-    TIMESTAMP,
-    ARRAY,
-    MAP,
-    STRUCT,
-    UNION,
-    DECIMAL,
-    DATE,
-    VARCHAR,
-    CHAR
+enum JsSchemaDataType
+{
+  BOOLEAN = 0,
+  TINYINT,
+  SMALLINT,
+  INT,
+  BIGINT,
+  FLOAT,
+  DOUBLE,
+  STRING,
+  BINARY,
+  TIMESTAMP,
+  ARRAY,
+  MAP,
+  STRUCT,
+  UNION,
+  DECIMAL,
+  DATE,
+  VARCHAR,
+  CHAR
 };
 class Writer : public Napi::ObjectWrap<Writer>
 {
@@ -42,12 +43,13 @@ public:
   static void Initialize(Napi::Env&, Napi::Object&);
   explicit Writer(const CallbackInfo&);
   ~Writer();
+
   void Close(const CallbackInfo&);
   void StringTypeSchema(const CallbackInfo&);
   void ImportCSV(const CallbackInfo&);
   void Schema(const CallbackInfo&);
   void Add(const CallbackInfo&);
-
+  void AddObject(const CallbackInfo&, Napi::Object);
 
   unique_ptr<orc::OutputStream> output;
   unique_ptr<orc::Writer> writer;
@@ -59,7 +61,6 @@ public:
   uint64_t batchSize = 1024;
   uint64_t bufferOffset = 0;
   uint64_t batchOffset = 0;
-
 };
 }
 #endif // NORC_WRITER_H
