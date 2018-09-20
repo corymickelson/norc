@@ -36,7 +36,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE
 target_link_libraries(${PROJECT_NAME} PRIVATE ${CMAKE_JS_LIB})
 find_package(Threads REQUIRED)
 
-file(MAKE_DIRECTORY ${CMAKE_SOURCE_DIR}/build/${CMAKE_BUILD_TYPE})
+file(MAKE_DIRECTORY ${CMAKE_SOURCE_DIR}/build/${CMAKE_BUILD_TYPE}/)
 
 # protobuf
 find_library(PROTOBUF_LIBRARY protobuf /usr/local/lib /usr/lib)
@@ -65,4 +65,4 @@ message("using protobuf: ${PROTOBUF_LIBRARY}")
 message("using orc library: ${ORC_LIBRARY}")
 add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
         COMMAND "${CMAKE_COMMAND}"
-        -E copy $<TARGET_FILE:norc> ${CMAKE_SOURCE_DIR}/build/${CMAKE_BUILD_TYPE})
+        -E copy $<TARGET_FILE:norc> ${CMAKE_SOURCE_DIR}/build/${CMAKE_BUILD_TYPE}/)

@@ -6,4 +6,5 @@ build
 releases
 test.js
 carval_details.csv
+CMakeLists.txt.user
 

@@ -200,22 +200,28 @@ Writer::Add(const CallbackInfo& info)
   }
   for (uint32_t i = 0; i < properties.Length(); i++) {
     string p = properties.Get(i).As<String>();
-    if (schema[i].first != p) {
-      TypeError::New(info.Env(), "Missing property: " + p)
-        .ThrowAsJavaScriptException();
-      return;
+    unsigned int idx = 0;
+    for (; idx < schema.size(); idx++) {
+      if (schema[idx].first == p) {
+        break;
+      }
+      if (idx == schema.size() - 1) {
+        TypeError::New(info.Env(), "Missing property: " + p)
+          .ThrowAsJavaScriptException();
+        return;
+      }
     }
-    switch (schema[i].second) {
+    switch (schema[idx].second) {
       case TypeKind::BYTE:
       case TypeKind::INT:
       case TypeKind::SHORT:
       case TypeKind::LONG: {
-        auto longBatch = dynamic_cast<LongVectorBatch*>(row->fields[i]);
+        auto longBatch = dynamic_cast<LongVectorBatch*>(row->fields[idx]);
         if (info[0].As<Object>().Get(p).IsNull()) {
-          row->fields[i]->notNull[batchOffset] = 0;
+          row->fields[idx]->notNull[batchOffset] = 0;
           longBatch->hasNulls = true;
         } else {
-          row->fields[i]->notNull[batchOffset] = 1;
+          row->fields[idx]->notNull[batchOffset] = 1;
           longBatch->data[batchOffset] =
             info[0].As<Object>().Get(p).As<Number>().Uint32Value();
           longBatch->numElements = batchOffset;
@@ -226,13 +232,13 @@ Writer::Add(const CallbackInfo& info)
       case TypeKind::CHAR:
       case TypeKind::STRING:
       case TypeKind::BINARY: {
-        auto stringBatch = dynamic_cast<StringVectorBatch*>(row->fields[i]);
+        auto stringBatch = dynamic_cast<StringVectorBatch*>(row->fields[idx]);
         if (info[0].As<Object>().Get(p).IsNull()) {
-          row->fields[i]->notNull[batchOffset] = 0;
+          row->fields[idx]->notNull[batchOffset] = 0;
           stringBatch->hasNulls = true;
         } else {
           string v = info[0].As<Object>().Get(p).As<String>();
-          row->fields[i]->notNull[batchOffset] = 1;
+          row->fields[idx]->notNull[batchOffset] = 1;
           if (buffer->size() - bufferOffset < v.size()) {
             buffer->reserve(buffer->size() * 2);
           }
@@ -246,12 +252,12 @@ Writer::Add(const CallbackInfo& info)
       }
 
       case TypeKind::BOOLEAN: {
-        auto boolBatch = dynamic_cast<LongVectorBatch*>(row->fields[i]);
+        auto boolBatch = dynamic_cast<LongVectorBatch*>(row->fields[idx]);
         if (info[0].As<Object>().Get(p).IsNull()) {
-          row->fields[i]->notNull[batchOffset] = 0;
+          row->fields[idx]->notNull[batchOffset] = 0;
           boolBatch->hasNulls = true;
         } else {
-          row->fields[i]->notNull[batchOffset] = 1;
+          row->fields[idx]->notNull[batchOffset] = 1;
           boolBatch->data[batchOffset] =
             info[0].As<Object>().Get(p).As<Boolean>();
         }
@@ -260,12 +266,12 @@ Writer::Add(const CallbackInfo& info)
       }
       case TypeKind::FLOAT:
       case TypeKind::DOUBLE: {
-        auto dblBatch = dynamic_cast<DoubleVectorBatch*>(row->fields[i]);
+        auto dblBatch = dynamic_cast<DoubleVectorBatch*>(row->fields[idx]);
         if (info[0].As<Object>().Get(p).IsNull()) {
-          row->fields[i]->notNull[batchOffset] = 0;
+          row->fields[idx]->notNull[batchOffset] = 0;
           dblBatch->hasNulls = true;
         } else {
-          row->fields[i]->notNull[batchOffset] = 1;
+          row->fields[idx]->notNull[batchOffset] = 1;
           dblBatch->data[batchOffset] =
             info[0].As<Object>().Get(p).As<Number>().FloatValue();
         }
@@ -273,20 +279,20 @@ Writer::Add(const CallbackInfo& info)
         break;
       }
       case TypeKind::TIMESTAMP: {
-        auto tsBatch = dynamic_cast<TimestampVectorBatch*>(row->fields[i]);
+        auto tsBatch = dynamic_cast<TimestampVectorBatch*>(row->fields[idx]);
         struct tm timeStruct
         {};
         if (info[0].As<Object>().Get(p).IsNull()) {
-          row->fields[i]->notNull[batchOffset] = 0;
+          row->fields[idx]->notNull[batchOffset] = 0;
           tsBatch->hasNulls = true;
         } else {
           string v = info[0].As<Object>().Get(p).As<String>();
           memset(&timeStruct, 0, sizeof(timeStruct));
           char* left = strptime(v.c_str(), "%Y-%m-%d %H:%M:%S", &timeStruct);
           if (left == nullptr) {
-            row->fields[i]->notNull[batchOffset] = 0;
+            row->fields[idx]->notNull[batchOffset] = 0;
           } else {
-            row->fields[i]->notNull[batchOffset] = 1;
+            row->fields[idx]->notNull[batchOffset] = 1;
             tsBatch->data[batchOffset] = timegm(&timeStruct);
             char* tail;
             double d = strtod(left, &tail);
@@ -303,19 +309,20 @@ Writer::Add(const CallbackInfo& info)
       }
       case TypeKind::DECIMAL: {
         auto precision =
-          type->getSubtype(static_cast<uint64_t>(i))->getPrecision();
-        auto scale = type->getSubtype(static_cast<uint64_t>(i))->getScale();
+          type->getSubtype(static_cast<uint64_t>(idx))->getPrecision();
+        auto scale = type->getSubtype(static_cast<uint64_t>(idx))->getScale();
         orc::Decimal128VectorBatch* d128Batch = ORC_NULLPTR;
         orc::Decimal64VectorBatch* d64Batch = ORC_NULLPTR;
         if (precision <= 18) {
-          d64Batch = dynamic_cast<orc::Decimal64VectorBatch*>(row->fields[i]);
+          d64Batch = dynamic_cast<orc::Decimal64VectorBatch*>(row->fields[idx]);
           d64Batch->scale = static_cast<int32_t>(scale);
         } else {
-          d128Batch = dynamic_cast<orc::Decimal128VectorBatch*>(row->fields[i]);
+          d128Batch =
+            dynamic_cast<orc::Decimal128VectorBatch*>(row->fields[idx]);
           d128Batch->scale = static_cast<int32_t>(scale);
         }
         if (info[0].As<Object>().Get(p).IsNull()) {
-          row->fields[i]->notNull[batchOffset] = 0;
+          row->fields[idx]->notNull[batchOffset] = 0;
           if (precision <= 18) {
             d64Batch->hasNulls = true;
           } else {
@@ -325,12 +332,12 @@ Writer::Add(const CallbackInfo& info)
         } else {
           auto v = info[0].As<Object>().Get(p).As<Number>().Uint32Value();
           Int128 decimal(v);
-          row->fields[i]->notNull[batchOffset] = 1;
+          row->fields[idx]->notNull[batchOffset] = 1;
 
           if (precision <= 18) {
-            d64Batch->values[i] = decimal.toLong();
+            d64Batch->values[idx] = decimal.toLong();
           } else {
-            d128Batch->values[i] = decimal;
+            d128Batch->values[idx] = decimal;
           }
         }
 
@@ -339,13 +346,13 @@ Writer::Add(const CallbackInfo& info)
       }
 
       case TypeKind::DATE: {
-        auto timeBatch = dynamic_cast<LongVectorBatch*>(row->fields[i]);
+        auto timeBatch = dynamic_cast<LongVectorBatch*>(row->fields[idx]);
         if (info[0].As<Object>().Get(p).IsNull()) {
-          row->fields[i]->notNull[batchOffset] = 0;
+          row->fields[idx]->notNull[batchOffset] = 0;
           timeBatch->hasNulls = true;
         } else {
           string v = info[0].As<Object>().Get(p).As<String>();
-          row->fields[i]->notNull[batchOffset] = 1;
+          row->fields[idx]->notNull[batchOffset] = 1;
           struct tm tm
           {};
           memset(&tm, 0, sizeof(struct tm));
