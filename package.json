@@ -36,6 +36,7 @@
     "index.d.ts",
     "index.js",
     "CMakeLists.txt",
-    "src"
+    "src",
+    "include"
   ]
 }
