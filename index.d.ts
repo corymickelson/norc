@@ -51,13 +51,30 @@ export namespace norc {
 
         columnStatistics(column:string): string
     }
+    export type ORC_ROW = {[key:string]: string|boolean|number|null}
     export class Writer {
-        constructor(output: string)
+        constructor(output?: string)
         stringTypeSchema(schema: string): void
         fromCsv(file: string, cb: (err: Error, norc: Writer) => void): void
         schema(v: {[key:string]: DataType}): void
-        add(row: {[key:string]: string|boolean|number}): void
-        add(rows: {[key:string]: string|boolean|number}[]): void
+        /**
+         * Add a single entry (struct) to the file
+         * @param row - struct
+         */
+        add(row: ORC_ROW): void
+        /**
+         * Add a collection of structs to the file.
+         * This is the prefered method of adding data to a file.
+         */
+        add(rows: ORC_ROW[]): void
+        /**
+         * Close the file stream.
+         */
         close(): void
+
+        /**
+         * If the file is writing to a buffer, retrieve the buffer, must be called after a call to close
+         */
+        getBuffer(): Buffer
     }
 }

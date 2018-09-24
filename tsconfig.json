@@ -1,9 +1,10 @@
 {
   "compilerOptions": {
     "declaration": true,
+    "experimentalDecorators": true,
     "preserveConstEnums": true,
     "lib": [
-      "esnext","es7"
+      "esnext"
     ],
     "module": "commonjs",
     "sourceMap": true,
@@ -18,5 +19,5 @@
       "node_modules/@types"
     ]
   },
-  "include": []
+  "include": ["spec/*.ts"]
 }

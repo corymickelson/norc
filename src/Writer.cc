@@ -1,9 +1,23 @@
-
-//
-// Created by developer on 9/12/18.
-//
-
+/**
+ * This file is part of the norc (R) project.
+ * Copyright (c) 2017-2018
+ * Authors: Cory Mickelson, et al.
+ *
+ * norc is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * norc is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
 #include "Writer.h"
+#include "MemoryFile.h"
 #include <algorithm>
 #include <cmath>
 #include <fstream>
@@ -38,7 +52,8 @@ Writer::Initialize(Napi::Env& env, Napi::Object& target)
       InstanceMethod("close", &norc::Writer::Close),
       InstanceMethod("schema", &norc::Writer::Schema),
       InstanceMethod("fromCsv", &norc::Writer::ImportCSV),
-      InstanceMethod("add", &norc::Writer::Add) });
+      InstanceMethod("add", &norc::Writer::Add),
+      InstanceMethod("getBuffer", &norc::Writer::GetBuffer) });
   constructor = Napi::Persistent(ctor);
   constructor.SuppressDestruct();
   target.Set("Writer", ctor);
@@ -47,12 +62,12 @@ Writer::Initialize(Napi::Env& env, Napi::Object& target)
 Writer::Writer(const CallbackInfo& info)
   : ObjectWrap(info)
 {
-  if (info.Length() < 1 || !info[0].IsString()) {
-    Error::New(info.Env(), "Writer constructor requires an output location")
-      .ThrowAsJavaScriptException();
+  if (info.Length() == 0) {
+    output = make_unique<MemoryWriter>(MEMORY_FILE_SIZE, info.Env());
+  } else {
+    output = writeLocalFile(info[0].As<String>());
   }
-  output = writeLocalFile(info[0].As<String>());
-  buffer = make_unique<DataBuffer<char>>(*getDefaultPool(), 4 * 1024 * 1024);
+  buffer = make_unique<DataBuffer<char>>(*getDefaultPool(), 4 << 10);
   options.setStripeSize((128 << 20));
   options.setCompressionBlockSize((64 << 10));
   options.setCompression(CompressionKind_ZLIB);
@@ -737,5 +752,13 @@ Writer::ImportCSV(const CallbackInfo& info)
   auto cb = info[1].As<Function>();
   auto worker = new ImportCSVWorker(cb, *this, info[0].As<String>());
   worker->Queue();
+}
+Napi::Value
+Writer::GetBuffer(const CallbackInfo& info)
+{
+  auto value = dynamic_cast<MemoryWriter*>(output.get())->getData();
+  string x(value);
+
+  return String::New(info.Env(), value);
 }
 }
