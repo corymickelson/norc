@@ -43,7 +43,7 @@ function runWriter() {
 }
 
 async function start() {
-  await runWriter()
+  // await runWriter()
   await runReader()
 }
 

@@ -53,7 +53,7 @@ public:
   unique_ptr<orc::Reader> reader;
   vector<NorcColumnMetadata> fileMeta;
   Napi::Buffer<string> data;
-  uint64_t chunkSize = 4096;
+  uint64_t chunkSize = 8 << 10;
 };
 }
 

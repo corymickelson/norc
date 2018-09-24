@@ -63,7 +63,10 @@ Writer::Writer(const CallbackInfo& info)
   : ObjectWrap(info)
 {
   if (info.Length() == 0) {
-    output = make_unique<MemoryWriter>(MEMORY_FILE_SIZE, info.Env());
+    Error::New(info.Env(), "an output path is required")
+      .ThrowAsJavaScriptException();
+    return;
+    //    output = make_unique<MemoryWriter>(MEMORY_FILE_SIZE, info.Env());
   } else {
     output = writeLocalFile(info[0].As<String>());
   }

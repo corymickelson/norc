@@ -161,11 +161,18 @@ protected:
       auto chunkCount = ceil(static_cast<double>(reader->data.Data()->size()) /
                              reader->chunkSize);
       unsigned long offset = 0;
-      for (unsigned int i = 1; i <= chunkCount; ++i) {
-        unsigned long chunkEnd =
-          offset + reader->chunkSize > reader->data.Data()->size()
-            ? reader->data.Data()->size() - i * reader->chunkSize
-            : reader->chunkSize + offset;
+      bool run = true;
+      while(run){
+        unsigned long chunkEnd;
+        if(offset + reader->chunkSize > reader->data.Data()->size()) {
+          chunkEnd =  reader->data.Data()->size() - offset;
+          if(chunkEnd == 0)
+            break;
+          run = false;
+        } else {
+          chunkEnd =  reader->chunkSize + offset;
+        }
+
         auto endIndex = reader->data.Data()->find('}', chunkEnd);
         string sub = reader->data.Data()->substr(offset, ++endIndex - offset);
         if (sub.empty())
@@ -180,6 +187,7 @@ protected:
           reader->Value(),
           { String::New(Env(), "data"), String::New(Env(), '[' + sub + ']') });
       }
+
       emit.Call(reader->Value(), { String::New(Env(), "end") });
     }
   }

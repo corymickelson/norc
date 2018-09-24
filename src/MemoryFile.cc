@@ -12,20 +12,20 @@ MemoryWriter::MemoryWriter(size_t bufSize, Napi::Env env)
   : env(env)
   , name("MemoryWriter")
 {
-  data = new char[bufSize];
+  data = new char[MEMORY_FILE_SIZE];
   length = 0;
 }
 MemoryWriter::~MemoryWriter()
 {
-  delete[] data;
+   delete[] data;
 }
 void
 MemoryWriter::write(const void* line, size_t size)
 {
   auto x = reinterpret_cast<const char*>(line);
 
-  memcpy(data + size, line, size);
-//  data +=  x;
+   memcpy(data + size, line, size);
+// data +=  x;
   length += size;
 }
 void

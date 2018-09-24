@@ -23,12 +23,12 @@ public:
   uint64_t getNaturalWriteSize() const override {return writeSize; }
   void write(const void*, size_t) override;
   const string& getName() const override {return name;}
-  char* getData() const { return data; }
+  const char* getData() const { return data; }
   void close() override;
 private:
   Napi::Env env;
   Napi::Buffer<char> buffer;
-  char*  data;
+  char* data;
   uint64_t length;
   uint64_t writeSize;
   string name;
