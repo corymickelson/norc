@@ -50,6 +50,7 @@ public:
   void Schema(const CallbackInfo&);
   void Add(const CallbackInfo&);
   void AddObject(const CallbackInfo&, Napi::Object);
+  Napi::Value GetBuffer(const CallbackInfo&);
 
   unique_ptr<orc::OutputStream> output;
   unique_ptr<orc::Writer> writer;

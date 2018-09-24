@@ -17,7 +17,7 @@ file(GLOB SOURCE_FILES
         "src/*.h"
         "src/*.cc")
 
-add_library(${PROJECT_NAME} SHARED ${SOURCE_FILES})
+add_library(${PROJECT_NAME} SHARED ${SOURCE_FILES} src/MemoryFile.cc src/MemoryFile.h)
 set_target_properties(${PROJECT_NAME} PROPERTIES PREFIX "" SUFFIX ".node")
 if (NOT PROJECT_DIR)
     message(WARNING "Project dir not explicity set using cmake source directory: ${CMAKE_SOURCE_DIR}")

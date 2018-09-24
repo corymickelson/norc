@@ -1,7 +1,21 @@
-//
-// Created by developer on 9/16/18.
-//
-
+/**
+ * This file is part of the norc (R) project.
+ * Copyright (c) 2017-2018
+ * Authors: Cory Mickelson, et al.
+ *
+ * norc is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * norc is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
 #include "Reader.h"
 #include "../include/json.hpp"
 #include "ValidateArguments.h"
@@ -177,9 +191,9 @@ private:
 void
 Reader::Read(const CallbackInfo& info)
 {
+  // TODO: This is not right, remove instance Napi::Buffer, replace with std vector, or just remove
   if (data && !data.Data()->empty()) {
     cout << "Clearing previous read results" << endl;
-    data.Data()->erase(0);
   }
   vector<int> opts =
     AssertCallbackInfo(info,
