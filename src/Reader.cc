@@ -106,9 +106,9 @@ protected:
           line = "";
         }
       }
-      cout << full[full.size() - 1] << endl;
-      full.erase(full.size() - 1);
-      cout << full[full.size() - 1] << endl;
+      if (!full.empty()) { // remove trailing comma
+        full.erase(full.size() - 1);
+      }
     } catch (std::exception& ex) {
       if (!asIterator) {
         Function emit = reader->Value().Get("emit").As<Function>();
@@ -162,15 +162,15 @@ protected:
                              reader->chunkSize);
       unsigned long offset = 0;
       bool run = true;
-      while(run){
+      while (run) {
         unsigned long chunkEnd;
-        if(offset + reader->chunkSize > reader->data.Data()->size()) {
-          chunkEnd =  reader->data.Data()->size() - offset;
-          if(chunkEnd == 0)
+        if (offset + reader->chunkSize > reader->data.Data()->size()) {
+          chunkEnd = reader->data.Data()->size() - offset;
+          if (chunkEnd == 0)
             break;
           run = false;
         } else {
-          chunkEnd =  reader->chunkSize + offset;
+          chunkEnd = reader->chunkSize + offset;
         }
 
         auto endIndex = reader->data.Data()->find('}', chunkEnd);
@@ -199,7 +199,8 @@ private:
 void
 Reader::Read(const CallbackInfo& info)
 {
-  // TODO: This is not right, remove instance Napi::Buffer, replace with std vector, or just remove
+  // TODO: This is not right, remove instance Napi::Buffer, replace with std
+  // vector, or just remove
   if (data && !data.Data()->empty()) {
     cout << "Clearing previous read results" << endl;
   }

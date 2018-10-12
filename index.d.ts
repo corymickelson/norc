@@ -54,9 +54,8 @@ export namespace norc {
     export type ORC_ROW = {[key:string]: string|boolean|number|null}
     export class Writer {
         constructor(output?: string)
-        stringTypeSchema(schema: string): void
         fromCsv(file: string, cb: (err: Error, norc: Writer) => void): void
-        schema(v: {[key:string]: DataType}): void
+        schema(v: {[key:string]: DataType}|string): void
         /**
          * Add a single entry (struct) to the file
          * @param row - struct

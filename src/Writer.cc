@@ -45,15 +45,14 @@ void
 Writer::Initialize(Napi::Env& env, Napi::Object& target)
 {
   HandleScope scope(env);
-  auto ctor = DefineClass(
-    env,
-    "Writer",
-    { InstanceMethod("stringTypeSchema", &norc::Writer::StringTypeSchema),
-      InstanceMethod("close", &norc::Writer::Close),
-      InstanceMethod("schema", &norc::Writer::Schema),
-      InstanceMethod("fromCsv", &norc::Writer::ImportCSV),
-      InstanceMethod("add", &norc::Writer::Add),
-      InstanceMethod("getBuffer", &norc::Writer::GetBuffer) });
+  auto ctor =
+    DefineClass(env,
+                "Writer",
+                { InstanceMethod("close", &norc::Writer::Close),
+                  InstanceMethod("schema", &norc::Writer::Schema),
+                  InstanceMethod("fromCsv", &norc::Writer::ImportCSV),
+                  InstanceMethod("add", &norc::Writer::Add),
+                  InstanceMethod("getBuffer", &norc::Writer::GetBuffer) });
   constructor = Napi::Persistent(ctor);
   constructor.SuppressDestruct();
   target.Set("Writer", ctor);
@@ -80,21 +79,16 @@ Writer::~Writer()
   HandleScope scope(Env());
   cout << "Destructing Writer" << endl;
 }
-void
-Writer::StringTypeSchema(const CallbackInfo& info)
-{
-  if (info.Length() < 1 || !info[0].IsString()) {
-    TypeError::New(info.Env(), "Schema should be formatted as a string")
-      .ThrowAsJavaScriptException();
-  }
-  string schema = info[0].As<String>();
-  type = Type::buildTypeFromString(schema);
-  writer = createWriter(*type, output.get(), options);
-}
 
 void
 Writer::Schema(const CallbackInfo& info)
 {
+  if (info.Length() == 1 && info[0].IsString()) {
+    string schema = info[0].As<String>();
+    type = Type::buildTypeFromString(schema);
+    writer = createWriter(*type, output.get(), options);
+    return;
+  }
   if (info.Length() < 1 || !info[0].IsObject()) {
     TypeError::New(info.Env(), "The schema as an Object format is required")
       .ThrowAsJavaScriptException();
