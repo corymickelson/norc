@@ -101,8 +101,9 @@ protected:
           printer->printRow(i);
           if (asIterator) {
             data.emplace_back(line);
+          } else {
+            full += line + ",";
           }
-          full += line + ",";
           line = "";
         }
       }
@@ -122,7 +123,6 @@ protected:
   }
   void OnOK() override
   {
-    reader->data = Buffer<string>::New(Env(), &full, full.size());
     if (asIterator) {
       Array out = Array::New(Env());
       for (uint32_t i = 0; i < data.size(); i++) {
@@ -158,14 +158,14 @@ protected:
                           .Call(out, {}) });
     } else {
       Function emit = reader->Value().Get("emit").As<Function>();
-      auto chunkCount = ceil(static_cast<double>(reader->data.Data()->size()) /
+      auto chunkCount = ceil(static_cast<double>(full.size()) /
                              reader->chunkSize);
       unsigned long offset = 0;
       bool run = true;
       while (run) {
         unsigned long chunkEnd;
-        if (offset + reader->chunkSize > reader->data.Data()->size()) {
-          chunkEnd = reader->data.Data()->size() - offset;
+        if (offset + reader->chunkSize > full.size()) {
+          chunkEnd = full.size() - offset;
           if (chunkEnd == 0)
             break;
           run = false;
@@ -173,8 +173,8 @@ protected:
           chunkEnd = reader->chunkSize + offset;
         }
 
-        auto endIndex = reader->data.Data()->find('}', chunkEnd);
-        string sub = reader->data.Data()->substr(offset, ++endIndex - offset);
+        auto endIndex = full.find('}', chunkEnd);
+        string sub = full.substr(offset, ++endIndex - offset);
         if (sub.empty())
           break;
         if (sub[0] == ',')
@@ -199,11 +199,6 @@ private:
 void
 Reader::Read(const CallbackInfo& info)
 {
-  // TODO: This is not right, remove instance Napi::Buffer, replace with std
-  // vector, or just remove
-  if (data && !data.Data()->empty()) {
-    cout << "Clearing previous read results" << endl;
-  }
   vector<int> opts =
     AssertCallbackInfo(info,
                        { { 0, { option(napi_function), option(napi_object) } },
