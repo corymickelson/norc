@@ -42,15 +42,15 @@ public:
   static Napi::FunctionReference constructor;
   static void Initialize(Napi::Env&, Napi::Object&);
   explicit Writer(const CallbackInfo&);
-  ~Writer();
+  ~Writer() = default;
 
   void Close(const CallbackInfo&);
-  void StringTypeSchema(const CallbackInfo&);
   void ImportCSV(const CallbackInfo&);
   void Schema(const CallbackInfo&);
   void Add(const CallbackInfo&);
   void AddObject(const CallbackInfo&, Napi::Object);
-  Napi::Value GetBuffer(const CallbackInfo&);
+  Napi::Value Data(const CallbackInfo&);
+  void Merge(const CallbackInfo&);
 
   unique_ptr<orc::OutputStream> output;
   unique_ptr<orc::Writer> writer;

@@ -17,13 +17,16 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include "Reader.h"
-#include "../include/json.hpp"
+#include "Internal.h"
+#include "MemoryFile.h"
 #include "ValidateArguments.h"
 #include <algorithm>
+#include <cmath>
 #include <orc/ColumnPrinter.hh>
 
 using namespace Napi;
 using namespace orc;
+
 using std::cout;
 using std::endl;
 using std::find;
@@ -32,7 +35,6 @@ using std::make_unique;
 using std::next;
 using std::pair;
 using std::string;
-using json = nlohmann::json;
 
 namespace norc {
 FunctionReference Reader::constructor; // NOLINT
@@ -56,18 +58,26 @@ Reader::Initialize(Napi::Env& env, Napi::Object& target)
 Reader::Reader(const CallbackInfo& info)
   : ObjectWrap(info)
 {
-  string input = info[0].As<String>();
-  reader = createReader(readFile(input), readerOptions);
+  string input;
+  Buffer<char> buffer;
+  if (info[0].IsString()) {
+    input = info[0].As<String>();
+    reader = createReader(readFile(input), readerOptions);
+  }
+  if (info[0].IsBuffer()) {
+    buffer = info[0].As<Buffer<char>>();
+    unique_ptr<InputStream> inputBuffer(
+      new MemoryReader(buffer.Data(), buffer.Length()));
+    readerOptions.setMemoryPool(*getDefaultPool());
+    reader = createReader(std::move(inputBuffer), readerOptions);
+  }
   for (unsigned int i = 0; i < reader->getType().getSubtypeCount(); i++) {
     TypeKind columnType = reader->getType().getSubtype(i)->getKind();
     string columnTitle = reader->getType().getFieldName(i);
     fileMeta.emplace_back(NorcColumnMetadata{ columnTitle, i, columnType });
   }
 }
-Reader::~Reader()
-{
-  cout << "Destructing Reader" << endl;
-}
+
 class ReadWorker : public AsyncWorker
 {
 public:
@@ -76,7 +86,6 @@ public:
     , reader(Reader::Unwrap(self.As<Object>()))
     , includes(std::move(includes))
   {
-    HandleScope scope(Env());
   }
   vector<string> data;
   string full;
@@ -112,7 +121,7 @@ protected:
       }
     } catch (std::exception& ex) {
       if (!asIterator) {
-        Function emit = reader->Value().Get("emit").As<Function>();
+        auto emit = reader->Value().Get("emit").As<Function>();
         emit.Call(reader->Value(),
                   { String::New(reader->Env(), "error"),
                     String::New(reader->Env(), ex.what()) });
@@ -127,39 +136,26 @@ protected:
       Array out = Array::New(Env());
       for (uint32_t i = 0; i < data.size(); i++) {
         auto o = Object::New(Env());
-        json j = json::parse(data[i]);
-        for (json::iterator it = j.begin(); it != j.end(); ++it) {
-          const string& k = it.key();
-          if (it.value().is_boolean()) {
-            o.Set(k, Boolean::New(Env(), it.value()));
-          } else if (it.value().is_number() || it.value().is_number_float() ||
-                     it.value().is_number_integer() ||
-                     it.value().is_number_unsigned()) {
-            o.Set(k, Number::New(Env(), it.value()));
-          } else if (it.value().is_string()) {
-            string v = it.value();
-            o.Set(k, String::New(Env(), v));
-          } else if (it.value().is_null()) {
-            o.Set(k, Env().Null());
-          } else {
-            o.Set(
-              k,
-              Error::New(Env(),
-                         "Unable to convert " + k + " from string: " + data[i])
-                .Value());
-          }
-        }
+        LineToJSON(Env(), data[i], o);
         out.Set(i, o);
       }
-
+      cout << out.Length() << endl;
       Callback().Call({ Env().Null(),
                         out.Get(Symbol::WellKnown(Env(), "iterator"))
                           .As<Function>()
                           .Call(out, {}) });
     } else {
-      Function emit = reader->Value().Get("emit").As<Function>();
-      auto chunkCount = ceil(static_cast<double>(full.size()) /
-                             reader->chunkSize);
+      auto emit = reader->Value().Get("emit").As<Function>();
+      if (full.size() < reader->chunkSize) {
+        emit
+          .Call(reader->Value(),
+                { String::New(Env(), "data"),
+                  String::New(Env(), '[' + full + ']') });
+            emit.Call(reader->Value(), { String::New(Env(), "end") });
+        return;
+      }
+      auto chunkCount =
+        ceil(static_cast<double>(full.size()) / reader->chunkSize);
       unsigned long offset = 0;
       bool run = true;
       while (run) {
@@ -187,7 +183,6 @@ protected:
           reader->Value(),
           { String::New(Env(), "data"), String::New(Env(), '[' + sub + ']') });
       }
-
       emit.Call(reader->Value(), { String::New(Env(), "end") });
     }
   }
@@ -210,7 +205,7 @@ Reader::Read(const CallbackInfo& info)
   if (opts[0] == 0) {
     cb = info[0].As<Function>();
   } else if (opts[0] == 1) {
-    Object options = info[0].As<Object>();
+    auto options = info[0].As<Object>();
     if (options.Has("columns")) {
       cols = options.Get("columns").As<Array>();
     }

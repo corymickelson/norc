@@ -42,7 +42,6 @@ public:
   static Napi::FunctionReference constructor;
   static void Initialize(Napi::Env&, Napi::Object&);
   explicit Reader(const CallbackInfo&);
-  ~Reader();
   void Read(const CallbackInfo&);
   Napi::Value GetColumnStatistics(const CallbackInfo&);
   Napi::Value GetWriterVersion(const CallbackInfo&);

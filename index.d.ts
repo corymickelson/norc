@@ -30,7 +30,7 @@ export namespace norc {
         readonly formatVersion: string
         readonly compressions: string
 
-        constructor(input: string)
+        constructor(input: string|Buffer)
 
         /**
          * Read all contents into memory and emit on Reader.on('data', (data:string) => void): void
@@ -51,7 +51,7 @@ export namespace norc {
 
         columnStatistics(column:string): string
     }
-    export type ORC_ROW = {[key:string]: string|boolean|number|null}
+    export type ORC_ROW = {[key: string]: string|boolean|number|null}
     export class Writer {
         constructor(output?: string)
         fromCsv(file: string, cb: (err: Error, norc: Writer) => void): void
@@ -63,7 +63,7 @@ export namespace norc {
         add(row: ORC_ROW): void
         /**
          * Add a collection of structs to the file.
-         * This is the prefered method of adding data to a file.
+         * This is the preferred method of adding data to a file.
          */
         add(rows: ORC_ROW[]): void
         /**
@@ -72,8 +72,17 @@ export namespace norc {
         close(): void
 
         /**
+         * This method is memory intensive as the conditional (if defined) will call back into the JS runtime to execute
+         * the function and then use the results to determine if the row should be added to the merged file.
+         * This is currently all done in a synchronous manner.
+         * @param file
+         * @param condition
+         * @todo update to execute in seperate thread.
+         */
+        merge(file: string|Buffer, condition?: (r: ORC_ROW) => boolean): void
+        /**
          * If the file is writing to a buffer, retrieve the buffer, must be called after a call to close
          */
-        getBuffer(): Buffer
+        data(): Buffer
     }
 }

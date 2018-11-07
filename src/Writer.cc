@@ -17,16 +17,25 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include "Writer.h"
+#include "Internal.h"
 #include "MemoryFile.h"
+#include "ValidateArguments.h"
+
 #include <algorithm>
 #include <cmath>
+#include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <orc/ColumnPrinter.hh>
 #include <sstream>
 #include <utility>
 
+#define NAPI_EXPERIMENTAL
+#include <node_api.h>
+
 using namespace Napi;
 using namespace orc;
+
 using std::cout;
 using std::endl;
 using std::find;
@@ -38,6 +47,8 @@ using std::string;
 using std::stringstream;
 using std::vector;
 
+namespace fs = std::filesystem;
+
 namespace norc {
 FunctionReference Writer::constructor; // NOLINT
 
@@ -45,14 +56,14 @@ void
 Writer::Initialize(Napi::Env& env, Napi::Object& target)
 {
   HandleScope scope(env);
-  auto ctor =
-    DefineClass(env,
-                "Writer",
-                { InstanceMethod("close", &norc::Writer::Close),
-                  InstanceMethod("schema", &norc::Writer::Schema),
-                  InstanceMethod("fromCsv", &norc::Writer::ImportCSV),
-                  InstanceMethod("add", &norc::Writer::Add),
-                  InstanceMethod("getBuffer", &norc::Writer::GetBuffer) });
+  auto ctor = DefineClass(env,
+                          "Writer",
+                          { InstanceMethod("close", &norc::Writer::Close),
+                            InstanceMethod("schema", &norc::Writer::Schema),
+                            InstanceMethod("fromCsv", &norc::Writer::ImportCSV),
+                            InstanceMethod("add", &norc::Writer::Add),
+                            InstanceMethod("data", &norc::Writer::Data),
+                            InstanceMethod("merge", &norc::Writer::Merge) });
   constructor = Napi::Persistent(ctor);
   constructor.SuppressDestruct();
   target.Set("Writer", ctor);
@@ -61,23 +72,16 @@ Writer::Initialize(Napi::Env& env, Napi::Object& target)
 Writer::Writer(const CallbackInfo& info)
   : ObjectWrap(info)
 {
-  if (info.Length() == 0) {
-    Error::New(info.Env(), "an output path is required")
-      .ThrowAsJavaScriptException();
-    return;
-    //    output = make_unique<MemoryWriter>(MEMORY_FILE_SIZE, info.Env());
-  } else {
-    output = writeLocalFile(info[0].As<String>());
-  }
   buffer = make_unique<DataBuffer<char>>(*getDefaultPool(), 4 * 1024 * 1024);
   options.setStripeSize((128 << 20));
   options.setCompressionBlockSize((64 << 10));
   options.setCompression(CompressionKind_ZLIB);
-}
-Writer::~Writer()
-{
-  HandleScope scope(Env());
-  cout << "Destructing Writer" << endl;
+  if (info.Length() == 0) {
+    output = make_unique<MemoryWriter>(MEMORY_FILE_SIZE);
+    options.setMemoryPool(getDefaultPool());
+  } else {
+    output = writeLocalFile(info[0].As<String>());
+  }
 }
 
 void
@@ -199,7 +203,7 @@ void
 Writer::Add(const CallbackInfo& info)
 {
   if (info.Length() > 0 && info[0].IsArray()) {
-    Array chunk = info[0].As<Array>();
+    auto chunk = info[0].As<Array>();
     for (unsigned int i = 0; i < chunk.Length(); i++) {
       AddObject(info, chunk.Get(static_cast<uint32_t>(i)).As<Object>());
     }
@@ -240,152 +244,37 @@ Writer::AddObject(const CallbackInfo& info, Object value)
       case TypeKind::INT:
       case TypeKind::SHORT:
       case TypeKind::LONG: {
-        auto longBatch = dynamic_cast<LongVectorBatch*>(row->fields[idx]);
-        if (value.Get(p).IsNull()) {
-          row->fields[idx]->notNull[batchOffset] = 0;
-          longBatch->hasNulls = true;
-        } else {
-          row->fields[idx]->notNull[batchOffset] = 1;
-          longBatch->data[batchOffset] =
-            value.Get(p).As<Number>().Uint32Value();
-          longBatch->numElements = batchOffset;
-        }
+        AddNumberType(
+          info.Env(), row->fields[idx], batchOffset, value.Get(p));
         break;
       }
       case TypeKind::VARCHAR:
       case TypeKind::CHAR:
       case TypeKind::STRING:
       case TypeKind::BINARY: {
-        auto stringBatch = dynamic_cast<StringVectorBatch*>(row->fields[idx]);
-        if (value.Get(p).IsNull()) {
-          row->fields[idx]->notNull[batchOffset] = 0;
-          stringBatch->hasNulls = true;
-        } else {
-          string v = value.Get(p).As<String>();
-          row->fields[idx]->notNull[batchOffset] = 1;
-          if (buffer->size() - bufferOffset < v.size()) {
-            buffer->reserve(buffer->size() * 2);
-          }
-          memcpy(buffer->data() + bufferOffset, v.c_str(), v.size());
-          stringBatch->data[batchOffset] = buffer->data() + bufferOffset;
-          stringBatch->length[batchOffset] = static_cast<long>(v.size());
-          bufferOffset += v.size();
-        }
-        stringBatch->numElements = batchOffset;
+        AddStringType(info.Env(), row->fields[idx], buffer.get(), batchOffset, &bufferOffset, value.Get(p));
         break;
       }
 
       case TypeKind::BOOLEAN: {
-        auto boolBatch = dynamic_cast<LongVectorBatch*>(row->fields[idx]);
-        if (value.Get(p).IsNull()) {
-          row->fields[idx]->notNull[batchOffset] = 0;
-          boolBatch->hasNulls = true;
-        } else {
-          row->fields[idx]->notNull[batchOffset] = 1;
-          boolBatch->data[batchOffset] = value.Get(p).As<Boolean>();
-        }
-        boolBatch->numElements = batchOffset;
+        AddBoolType(info.Env(), row->fields[idx], batchOffset, value.Get(p));
         break;
       }
       case TypeKind::FLOAT:
       case TypeKind::DOUBLE: {
-        auto dblBatch = dynamic_cast<DoubleVectorBatch*>(row->fields[idx]);
-        if (value.Get(p).IsNull()) {
-          row->fields[idx]->notNull[batchOffset] = 0;
-          dblBatch->hasNulls = true;
-        } else {
-          row->fields[idx]->notNull[batchOffset] = 1;
-          dblBatch->data[batchOffset] = value.Get(p).As<Number>().DoubleValue();
-        }
-        dblBatch->numElements = batchOffset;
+        AddFloatType(info.Env(), row->fields[idx], batchOffset, value.Get(p));
         break;
       }
       case TypeKind::TIMESTAMP: {
-        auto tsBatch = dynamic_cast<TimestampVectorBatch*>(row->fields[idx]);
-        struct tm timeStruct
-        {};
-        if (value.Get(p).IsNull()) {
-          row->fields[idx]->notNull[batchOffset] = 0;
-          tsBatch->hasNulls = true;
-        } else {
-          string v = value.Get(p).As<String>();
-          memset(&timeStruct, 0, sizeof(timeStruct));
-          char* left = strptime(v.c_str(), "%Y-%m-%d %H:%M:%S", &timeStruct);
-          if (left == nullptr) {
-            row->fields[idx]->notNull[batchOffset] = 0;
-          } else {
-            row->fields[idx]->notNull[batchOffset] = 1;
-            tsBatch->data[batchOffset] = timegm(&timeStruct);
-            char* tail;
-            double d = strtod(left, &tail);
-            if (tail != left) {
-              tsBatch->nanoseconds[batchOffset] =
-                static_cast<long>(d * 1000000000.0);
-            } else {
-              tsBatch->nanoseconds[batchOffset] = 0;
-            }
-          }
-        }
-        tsBatch->numElements = batchOffset;
+        AddTimeType(info.Env(), row->fields[idx], batchOffset, value.Get(p));
         break;
       }
       case TypeKind::DECIMAL: {
-        auto precision =
-          type->getSubtype(static_cast<uint64_t>(idx))->getPrecision();
-        auto scale = type->getSubtype(static_cast<uint64_t>(idx))->getScale();
-        orc::Decimal128VectorBatch* d128Batch = ORC_NULLPTR;
-        orc::Decimal64VectorBatch* d64Batch = ORC_NULLPTR;
-        if (precision <= 18) {
-          d64Batch = dynamic_cast<orc::Decimal64VectorBatch*>(row->fields[idx]);
-          d64Batch->scale = static_cast<int32_t>(scale);
-        } else {
-          d128Batch =
-            dynamic_cast<orc::Decimal128VectorBatch*>(row->fields[idx]);
-          d128Batch->scale = static_cast<int32_t>(scale);
-        }
-        if (value.Get(p).IsNull()) {
-          row->fields[idx]->notNull[batchOffset] = 0;
-          if (precision <= 18) {
-            d64Batch->hasNulls = true;
-          } else {
-            d128Batch->hasNulls = true;
-          }
-
-        } else {
-          auto v = value.Get(p).As<Number>().Uint32Value();
-          Int128 decimal(v);
-          row->fields[idx]->notNull[batchOffset] = 1;
-
-          if (precision <= 18) {
-            d64Batch->values[idx] = decimal.toLong();
-          } else {
-            d128Batch->values[idx] = decimal;
-          }
-        }
-
-        d64Batch->numElements = batchOffset;
+        AddDecimalType(info.Env(),row->fields[idx], type->getSubtype(static_cast<uint64_t>(idx)), batchOffset, idx, value.Get(p));
         break;
       }
-
       case TypeKind::DATE: {
-        auto timeBatch = dynamic_cast<LongVectorBatch*>(row->fields[idx]);
-        if (value.Get(p).IsNull()) {
-          row->fields[idx]->notNull[batchOffset] = 0;
-          timeBatch->hasNulls = true;
-        } else {
-          string v = value.Get(p).As<String>();
-          row->fields[idx]->notNull[batchOffset] = 1;
-          struct tm tm
-          {};
-          memset(&tm, 0, sizeof(struct tm));
-          strptime(v.c_str(), "%Y-%m-%d", &tm);
-          time_t t = mktime(&tm);
-          time_t t1970 = 0;
-          double seconds = difftime(t, t1970);
-          auto days = static_cast<int64_t>(seconds / (60 * 60 * 24));
-          timeBatch->data[batchOffset] = days;
-        }
-        timeBatch->numElements = batchOffset;
+        AddDateType(info.Env(), row->fields[idx], batchOffset, value.Get(p));
         break;
       }
       case TypeKind::LIST:
@@ -751,11 +640,70 @@ Writer::ImportCSV(const CallbackInfo& info)
   worker->Queue();
 }
 Napi::Value
-Writer::GetBuffer(const CallbackInfo& info)
+Writer::Data(const CallbackInfo& info)
 {
-  auto value = dynamic_cast<MemoryWriter*>(output.get())->getData();
-  string x(value);
-
-  return String::New(info.Env(), value);
+  auto file = dynamic_cast<MemoryWriter*>(output.get());
+  return Buffer<char>::New(info.Env(), file->getData(), file->getLength());
 }
+void
+Writer::Merge(const CallbackInfo& info)
+{
+  string filepath;
+  Buffer<char> buffer;
+  Function condition;
+  ReaderOptions options;
+  RowReaderOptions rowReaderOptions;
+  unique_ptr<Reader> reader;
+  unique_ptr<RowReader> rowReader;
+  unique_ptr<ColumnVectorBatch> batch;
+  bool hasCondition = false;
+
+  if (info.Length() < 1 ||
+      (info.Length() == 1 && (!info[0].IsString() || !info[0].IsBuffer()))) {
+    Error::New(info.Env(), "File expected").ThrowAsJavaScriptException();
+    return;
+  }
+  if (info[0].IsString()) {
+    filepath = info[0].As<String>();
+    fs::path p(filepath);
+    if (!fs::exists(p)) {
+      Error::New(info.Env(), "File not found").ThrowAsJavaScriptException();
+      return;
+    }
+    reader = createReader(readFile(filepath), options);
+  } else { // else must be Buffer
+    buffer = info[0].As<Buffer<char>>();
+    unique_ptr<InputStream> input(
+      new MemoryReader(buffer.Data(), buffer.Length()));
+    options.setMemoryPool(*getDefaultPool());
+    reader = createReader(std::move(input), options);
+  }
+  if (info.Length() >= 2 && info[1].IsFunction()) {
+    condition = info[1].As<Function>();
+    hasCondition = true;
+  }
+  rowReader = reader->createRowReader(rowReaderOptions);
+  batch = rowReader->createRowBatch(1024);
+  string line;
+  unique_ptr<ColumnPrinter> printer =
+    createColumnPrinter(line, &rowReader->getSelectedType());
+  while (rowReader->next(*batch)) {
+    printer->reset(*batch);
+    for (unsigned int i = 0; i < batch->numElements; i++) {
+      printer->printRow(i);
+      auto target = Napi::Object::New(info.Env());
+      LineToJSON(info.Env(), line, target);
+      bool skip = false;
+      if (hasCondition) {
+        Napi::Value keep = condition.Call({ target });
+        skip = !keep.As<Boolean>();
+      }
+      if(!skip) {
+        AddObject(info, target);
+      }
+      line = "";
+    }
+  }
+}
+
 }

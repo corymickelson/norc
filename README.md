@@ -1,6 +1,7 @@
 # NORC
+
 This project provides nodejs bindings to apache orc core c++.
-<mark>This project is in very early stages of development</mark>
+<mark>This project is in early stages of development</mark>
 
 ## Examples
 

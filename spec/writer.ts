@@ -2,12 +2,12 @@ import {TestFixture, AsyncTest, Expect, Timeout} from 'alsatian'
 import {DataType, norc} from '../'
 import {fromPath} from 'fast-csv'
 import {join} from 'path'
+import Writer = norc.Writer;
 
 @TestFixture("Writer Tests")
 export class WriterSpec {
 
     @AsyncTest("Convert from csv")
-    @Timeout(30000)
     public async fromCsv() {
         return new Promise((resolve, reject) => {
             let filePath = join(__dirname, './test_files/test_data.orc')
@@ -51,11 +51,50 @@ export class WriterSpec {
                 })
                 .on('end', () => {
                     file.close()
-                    // let src = file.getBuffer()
-                    // console.log('src: ', src)
-                    // Expect(src).toBeDefined()
                     return resolve()
                 })
         })
+    }
+
+    @AsyncTest('Memory Writer')
+    public async memoryFileWriterTest() {
+        const file = new Writer()
+        const schema = {
+            key: DataType.INT,
+            value: DataType.STRING
+        }
+        file.schema(schema)
+        // @ts-ignore
+        file.add({key: 0, value: 'zero'})
+        file.close()
+        Expect(file.data()).toBeDefined()
+        Expect(file.data().length).toEqual(340)
+    }
+
+    @AsyncTest('Writer Merge Existing File')
+    public async mergeTest() {
+        const writer = new Writer()
+        let filePath = join(__dirname, './test_files/test_data.orc')
+        const schema = {
+            LoanId: DataType.STRING,
+            ProductType: DataType.STRING,
+            LoanTermMonths: DataType.INT,
+            APR: DataType.FLOAT,
+            FundingDate: DataType.DATE,
+            ActualPurchasePercentage: DataType.FLOAT,
+            UnpaidPrincipalBalanceAtPurchaseDate: DataType.FLOAT,
+            TotalPurchaseAmount: DataType.FLOAT,
+            State: DataType.STRING,
+            QualifyingFICO: DataType.INT,
+            QualifyingDTI: DataType.FLOAT,
+            Installer: DataType.STRING,
+            Partner: DataType.STRING,
+            Tranche: DataType.STRING
+        }
+        writer.schema(schema)
+        writer.merge(filePath, i => i.State === 'TX')
+        writer.close()
+        const mergedFileData = writer.data()
+        require('fs').writeFileSync('/tmp/test.orc', mergedFileData)
     }
 }
