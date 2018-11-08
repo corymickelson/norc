@@ -9,7 +9,6 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_FLAGS_DEBUG "-g")
 set(CMAKE_CXX_FLAGS_RELEASE "-O3")
 set(NAPI_CPP_EXCEPTIONS "yes")
-set(CMAKE_CXX_FLAGS -fPIC)
 set(CMAKE_EXPORT_COMPILE_COMMANDS "yes")
 set(CMAKE_CXX_FLAGS "-fPIC")
 set(CMAKE_SHARED_LINKER_FLAGS "-Wl,-rpath=/var/task/node_modules/norc-aws/lib")
@@ -24,17 +23,12 @@ set_target_properties(${PROJECT_NAME} PROPERTIES PREFIX "" SUFFIX ".node")
 if (NOT PROJECT_DIR)
     message(WARNING "Project dir not explicity set using cmake source directory: ${CMAKE_SOURCE_DIR}")
     set(NAPI_MODULE "${CMAKE_SOURCE_DIR}/node_modules/node-addon-api")
-    set(NAPI_SRC "${CMAKE_SOURCE_DIR}/node_modules/node-addon-api/src")
 else()
     set(NAPI_MODULE "${PROJECT_DIR}/node_modules/node-addon-api")
-    set(NAPI_SRC  "${PROJECT_DIR}/node_modules/node-addon-api/src")
 endif()
-message(WARNING "Using napi: ${NAPI_MODULE}")
 target_include_directories(${PROJECT_NAME} PRIVATE
-        ${NAPI_MODULE}
-        ${NAPI_MODULE}/include
-        ${NAPI_SRC}
-        ${CMAKE_JS_INC} )
+        ${CMAKE_JS_INC}
+        ${NAPI_MODULE})
 target_link_libraries(${PROJECT_NAME} PRIVATE ${CMAKE_JS_LIB} stdc++fs)
 find_package(Threads REQUIRED)
 
