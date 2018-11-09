@@ -43,6 +43,20 @@ orc.add(data)
 orc.close()
 ```
 
+__Merge files__
+
+```typescript
+import {norc: {Writer}, DataType} from '@npilot/norc'
+const writer = new Writer() // passing an empty argument to constructor will write to a nodejs buffer
+writer.schema({key: DataType.INT, value: DataType.INT})
+writer.add({key: 0, value: 0})
+// other can be a file path (string) or buffer
+let other = '/path/to/other.orc'
+writer.merge(other, i => i.key !== 0) // only add from other.orc where the key is not 0
+writer.close()
+writer.data() // will return the nodejs buffer
+```
+
 __Read a file into array iterator__
 
 ```typescript
@@ -63,7 +77,7 @@ __Read file and listen to "on" event for contents__
 ```typescript
 import {norc: {Reader}} from '@npilot/norc'
 // Read as iterator
-const reader = new Reader('/path/to/orcfile')
+const reader = new Reader('/path/to/orcfile') // a buffer is also acceptable
 // Read and listen .on('data')
 reader.on('data', chunk => {
     chunk = JSON.parse(chunk)
