@@ -658,11 +658,6 @@ Writer::Merge(const CallbackInfo& info)
   unique_ptr<ColumnVectorBatch> batch;
   bool hasCondition = false;
 
-  if (info.Length() < 1 ||
-      (info.Length() == 1 && (!info[0].IsString() || !info[0].IsBuffer()))) {
-    Error::New(info.Env(), "File expected").ThrowAsJavaScriptException();
-    return;
-  }
   if (info[0].IsString()) {
     filepath = info[0].As<String>();
     fs::path p(filepath);
@@ -671,12 +666,15 @@ Writer::Merge(const CallbackInfo& info)
       return;
     }
     reader = createReader(readFile(filepath), options);
-  } else { // else must be Buffer
+  } else if(info[0].IsBuffer()) {
     buffer = info[0].As<Buffer<char>>();
     unique_ptr<InputStream> input(
       new MemoryReader(buffer.Data(), buffer.Length()));
     options.setMemoryPool(*getDefaultPool());
     reader = createReader(std::move(input), options);
+  } else {
+    Error::New(info.Env(), "A string or Buffer was expected").ThrowAsJavaScriptException();
+    return;
   }
   if (info.Length() >= 2 && info[1].IsFunction()) {
     condition = info[1].As<Function>();
